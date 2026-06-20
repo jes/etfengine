@@ -8,16 +8,28 @@ from pathlib import Path
 import pandas as pd
 
 from fetch_yahoo_history import (
+    apply_adj_close_restatement,
+    infer_adj_close_restatement_factor,
     merge_histories,
+    restate_and_merge_histories,
     _normalize_history_df,
     read_existing_history,
     write_history_atomic,
 )
 
 
-def _frame(rows: list[tuple[str, float]]) -> pd.DataFrame:
+def _ohlc_frame(
+    rows: list[tuple[str, float, float | None]],
+) -> pd.DataFrame:
     index = pd.to_datetime([row[0] for row in rows])
-    return pd.DataFrame({"Close": [row[1] for row in rows]}, index=index)
+    df = pd.DataFrame({"Close": [row[1] for row in rows]}, index=index)
+    if any(row[2] is not None for row in rows):
+        df["Adj Close"] = [row[2] for row in rows]
+    return df
+
+
+def _frame(rows: list[tuple[str, float]]) -> pd.DataFrame:
+    return _ohlc_frame([(row[0], row[1], None) for row in rows])
 
 
 class FetchYahooHistoryTests(unittest.TestCase):
@@ -56,3 +68,55 @@ class FetchYahooHistoryTests(unittest.TestCase):
 
         self.assertIn("Adj Close", out.columns)
         self.assertAlmostEqual(float(out.iloc[0]["Adj Close"]), 99.5)
+
+    def test_infer_adj_close_restatement_factor_on_overlap(self) -> None:
+        existing = _ohlc_frame(
+            [
+                ("2026-06-01", 100.0, 100.0),
+                ("2026-06-02", 101.0, 101.0),
+            ]
+        )
+        new = _ohlc_frame(
+            [
+                ("2026-06-02", 101.0, 105.0),
+                ("2026-06-03", 102.0, 106.05),
+            ]
+        )
+        factor = infer_adj_close_restatement_factor(existing, new)
+        self.assertAlmostEqual(factor or 0.0, 105.0 / 101.0, places=9)
+
+    def test_infer_adj_close_restatement_factor_unchanged(self) -> None:
+        existing = _ohlc_frame([("2026-06-02", 101.0, 101.0)])
+        new = _ohlc_frame([("2026-06-02", 101.0, 101.0), ("2026-06-03", 102.0, 102.0)])
+        self.assertIsNone(infer_adj_close_restatement_factor(existing, new))
+
+    def test_infer_adj_close_restatement_factor_rejects_close_drift(self) -> None:
+        existing = _ohlc_frame([("2026-06-02", 101.0, 101.0)])
+        new = _ohlc_frame([("2026-06-02", 99.0, 105.0)])
+        self.assertIsNone(infer_adj_close_restatement_factor(existing, new))
+
+    def test_restate_and_merge_histories_rescales_history(self) -> None:
+        existing = _ohlc_frame(
+            [
+                ("2026-06-01", 100.0, 100.0),
+                ("2026-06-02", 101.0, 101.0),
+            ]
+        )
+        new = _ohlc_frame(
+            [
+                ("2026-06-02", 101.0, 105.0),
+                ("2026-06-03", 102.0, 106.05),
+            ]
+        )
+        merged, factor = restate_and_merge_histories(existing, new)
+        self.assertAlmostEqual(factor or 0.0, 105.0 / 101.0, places=9)
+        self.assertAlmostEqual(float(merged.loc["2026-06-01", "Adj Close"]), 100.0 * 105.0 / 101.0)
+        self.assertAlmostEqual(float(merged.loc["2026-06-02", "Adj Close"]), 105.0)
+        self.assertAlmostEqual(float(merged.loc["2026-06-03", "Adj Close"]), 106.05)
+        self.assertEqual(len(merged), 3)
+
+    def test_apply_adj_close_restatement_leaves_close_unchanged(self) -> None:
+        df = _ohlc_frame([("2026-06-01", 100.0, 100.0)])
+        restated = apply_adj_close_restatement(df, 1.05)
+        self.assertAlmostEqual(float(restated.loc["2026-06-01", "Close"]), 100.0)
+        self.assertAlmostEqual(float(restated.loc["2026-06-01", "Adj Close"]), 105.0)

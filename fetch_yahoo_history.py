@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
 """Fetch daily OHLC history from Yahoo Finance for markets in a manifest CSV.
 
-By default, existing files are updated by merging in new rows only.
-Use --force for a full re-download of each series.
+By default, existing files are updated by merging in new rows only. Incremental
+updates re-fetch from the last stored date (overlap) so Yahoo dividend restatements
+can be detected; when Adj Close shifts on overlap, all stored Adj Close values are
+rescaled before merge. Use --force for a full re-download of each series.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import math
 import os
 import sys
 import tempfile
 import time
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -21,6 +24,87 @@ import pandas as pd
 DEFAULT_INPUT = Path("etfs/output/markets_stats_allowlist.csv")
 DEFAULT_OUTPUT_DIR = Path("etfs/yahoo")
 HISTORY_COLUMNS = ("Open", "High", "Low", "Close", "Adj Close", "Volume")
+ADJUSTED_CLOSE_COLUMN = "Adj Close"
+
+
+def _valid_adj_close(value: object) -> float | None:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0 or math.isnan(parsed):
+        return None
+    return parsed
+
+
+def infer_adj_close_restatement_factor(
+    existing: pd.DataFrame,
+    new_df: pd.DataFrame,
+    *,
+    rel_tol: float = 1e-9,
+    abs_tol: float = 1e-8,
+) -> float | None:
+    """Return multiplicative factor to align stored Adj Close with Yahoo's overlap row.
+
+    Yahoo backward-adjusts historical Adj Close when dividends are recorded. On an
+    incremental fetch we overlap the last stored date; if Adj Close moved while
+    Close is unchanged, rescale all stored Adj Close values by new_adj / old_adj.
+    """
+    if existing.empty or new_df.empty:
+        return None
+    if ADJUSTED_CLOSE_COLUMN not in existing.columns or ADJUSTED_CLOSE_COLUMN not in new_df.columns:
+        return None
+
+    overlap = existing.index.intersection(new_df.index)
+    if overlap.empty:
+        return None
+
+    factors: list[float] = []
+    for ts in sorted(overlap):
+        old_adj = _valid_adj_close(existing.loc[ts, ADJUSTED_CLOSE_COLUMN])
+        new_adj = _valid_adj_close(new_df.loc[ts, ADJUSTED_CLOSE_COLUMN])
+        if old_adj is None or new_adj is None:
+            continue
+        old_close = _valid_adj_close(existing.loc[ts, "Close"])
+        new_close = _valid_adj_close(new_df.loc[ts, "Close"])
+        if old_close is None or new_close is None:
+            continue
+        if abs(old_close - new_close) > max(abs_tol, rel_tol * old_close):
+            continue
+        factors.append(new_adj / old_adj)
+
+    if not factors:
+        return None
+
+    factor = factors[-1]
+    ref = factors[-1]
+    for candidate in factors[:-1]:
+        if abs(candidate - ref) > max(abs_tol, rel_tol * abs(ref)):
+            return None
+
+    if abs(factor - 1.0) <= max(abs_tol, rel_tol * abs(ref)):
+        return None
+    return factor
+
+
+def apply_adj_close_restatement(df: pd.DataFrame, factor: float) -> pd.DataFrame:
+    if ADJUSTED_CLOSE_COLUMN not in df.columns:
+        return df
+    out = df.copy()
+    out[ADJUSTED_CLOSE_COLUMN] = out[ADJUSTED_CLOSE_COLUMN] * factor
+    return out
+
+
+def restate_and_merge_histories(
+    existing: pd.DataFrame,
+    new_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, float | None]:
+    factor = infer_adj_close_restatement_factor(existing, new_df)
+    if factor is not None:
+        existing = apply_adj_close_restatement(existing, factor)
+    return merge_histories(existing, new_df), factor
 
 
 def load_markets(path: Path) -> list[dict[str, str]]:
@@ -102,32 +186,41 @@ def update_market_history(
     out_path: Path,
     *,
     force: bool = False,
-) -> tuple[str, int, int, date | None, date | None]:
-    """Update one market file. Returns action, total rows, rows added, first date, last date."""
+) -> tuple[str, int, int, date | None, date | None, float | None]:
+    """Update one market file.
+
+    Returns action, total rows, rows added, first date, last date, restatement factor.
+    """
     existing = None if force else read_existing_history(out_path)
     rows_before = 0 if existing is None else len(existing)
+    restatement_factor: float | None = None
 
     if existing is None or existing.empty:
         merged = fetch_history(ticker)
         action = "fetched"
     else:
         last = last_history_date(existing)
-        start = last + timedelta(days=1) if last is not None else None
+        start = last if last is not None else None
         new_df = fetch_history(ticker, start=start)
-        if last is not None and not new_df.empty:
-            new_df = new_df[new_df.index > pd.Timestamp(last)]
-        merged = merge_histories(existing, new_df)
+        merged, restatement_factor = restate_and_merge_histories(existing, new_df)
         added = len(merged) - rows_before
-        action = "merged" if added > 0 else "unchanged"
+        if restatement_factor is not None and added > 0:
+            action = "merged+restatement"
+        elif restatement_factor is not None:
+            action = "restatement"
+        elif added > 0:
+            action = "merged"
+        else:
+            action = "unchanged"
 
     if merged.empty:
-        return "failed", 0, 0, None, None
+        return "failed", 0, 0, None, None, None
 
     write_history_atomic(out_path, merged)
     first = pd.Timestamp(merged.index[0]).date()
     last = pd.Timestamp(merged.index[-1]).date()
     added = len(merged) - rows_before
-    return action, len(merged), added, first, last
+    return action, len(merged), added, first, last, restatement_factor
 
 
 def main() -> int:
@@ -188,7 +281,7 @@ def main() -> int:
         mode = "force" if args.force else "merge"
         print(f"{mode} {market_id} ({ticker}) -> {out_path}")
         try:
-            action, total_rows, added, first, last = update_market_history(
+            action, total_rows, added, first, last, restatement_factor = update_market_history(
                 ticker,
                 out_path,
                 force=args.force,
@@ -199,6 +292,18 @@ def main() -> int:
             elif action == "unchanged":
                 print(f"  unchanged: {total_rows} rows through {last}")
                 unchanged += 1
+            elif action == "restatement":
+                print(
+                    f"  restated Adj Close x{restatement_factor:.8g}: "
+                    f"{total_rows} rows, {first} .. {last}"
+                )
+                ok += 1
+            elif action == "merged+restatement":
+                print(
+                    f"  merged: +{added} rows, restated Adj Close x{restatement_factor:.8g}, "
+                    f"{total_rows} total, {first} .. {last}"
+                )
+                ok += 1
             elif action == "merged":
                 print(f"  merged: +{added} rows, {total_rows} total, {first} .. {last}")
                 ok += 1
