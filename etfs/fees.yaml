@@ -1,0 +1,34 @@
+# Platform fee assumptions for ETF backtests.
+# TER is NOT listed here — it is already in NAV/price returns.
+# spread_pct on each asset in markets.csv models ETF bid-ask on rebalance.
+
+default_profile: investengine
+
+profiles:
+  investengine:
+    description: DIY ETF portfolio — zero platform and dealing fees
+    annual_platform_pct: 0.0
+    platform_cap_gbp_annual: null
+    trade_fee_gbp: 0.0
+    fx_spread_pct: 0.0  # many USD ETFs; set ~0.5 if modeling FX on every trade
+
+  aj_bell:
+    description: AJ Bell Youinvest — 0.25% capped £3.50/month, £1.50+ per trade
+    annual_platform_pct: 0.25
+    platform_cap_gbp_annual: 42.0
+    trade_fee_gbp: 1.50
+    fx_spread_pct: 0.45
+
+  hl:
+    description: Hargreaves Lansdown — 0.35% capped £12.50/month, £6.95 per trade (Mar 2026)
+    annual_platform_pct: 0.35
+    platform_cap_gbp_annual: 150.0
+    trade_fee_gbp: 6.95
+    fx_spread_pct: 0.50
+
+  hl_frequent:
+    description: HL with 20+ trades/month tier
+    annual_platform_pct: 0.35
+    platform_cap_gbp_annual: 150.0
+    trade_fee_gbp: 3.95
+    fx_spread_pct: 0.50

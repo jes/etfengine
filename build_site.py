@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""Build ETF strategy static site in public/."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from datetime import date
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+
+ROOT = Path(__file__).resolve().parent
+ETFS_DIR = ROOT / "etfs"
+if str(ETFS_DIR) not in sys.path:
+    sys.path.insert(0, str(ETFS_DIR))
+
+import config as etf_config  # noqa: E402
+from sharpening_backtest import (  # noqa: E402
+    load_backtest_universe,
+    plot_portfolio_weights,
+    run_etf_backtest,
+    write_diagnostics,
+)
+from site_builder.etf_data import (  # noqa: E402
+    allocation_rows,
+    drawdown_snapshot,
+    period_returns,
+    rebased_equity,
+    rolling_metric_charts,
+    summary_stats,
+    tracking_anchor_index,
+)
+from site_builder.etf_html import build_index_html  # noqa: E402
+from site_builder.etf_plots import (  # noqa: E402
+    plot_backtest_drawdown_distribution,
+    plot_backtest_return_histogram,
+    plot_etf_drawdown,
+    plot_etf_equity,
+    plot_etf_rolling_metric_chart,
+    plot_invested_weight,
+    write_sparklines,
+)
+from site_builder.metrics import distribution_stats, drawdown_series  # noqa: E402
+from site_builder.publish import (  # noqa: E402
+    build_timestamp,
+    publish_snapshot_to_root,
+    write_builds_index,
+)
+from strategy.constants import RISK_FREE_ID  # noqa: E402
+
+
+def build_snapshot(
+    *,
+    snapshot_dir: Path,
+    project_root: Path,
+    generated_at: str,
+    tracking_start: str,
+) -> None:
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    diagnostics_path = ETFS_DIR / "output" / "sharpening_weekly_diagnostics.csv"
+
+    print("Loading universe…", flush=True)
+    universe = load_backtest_universe(
+        project_root=project_root,
+        markets_csv=etf_config.MARKETS_STATS_ALLOWLIST,
+        yahoo_dir=etf_config.YAHOO_DIR,
+        allowlist_csv=etf_config.MARKET_STATS_ALLOWLIST,
+        dividends=etf_config.DIVIDENDS,
+    )
+
+    print("Running backtest…", flush=True)
+    result = run_etf_backtest(
+        universe,
+        backtest_years=etf_config.BACKTEST_YEARS,
+        max_holdings=etf_config.MAX_HOLDINGS,
+        target_vol=etf_config.TARGET_VOL,
+        lookback_months=etf_config.LOOKBACK_MONTHS,
+        ewma_span=etf_config.EWMA_SPAN,
+        min_weight=etf_config.MIN_WEIGHT,
+        rebalance_frequency=etf_config.REBALANCE_FREQUENCY,
+        drift_band=etf_config.DRIFT_BAND,
+    )
+    write_diagnostics(diagnostics_path, result.points)
+
+    latest = result.points[-1]
+    as_of = date.fromisoformat(latest.iso_date)
+    bench_label = etf_config.BENCHMARK_LABEL
+    strat_returns = [point.weekly_return for point in result.points]
+    rf_returns = [
+        universe.assets[RISK_FREE_ID].returns_by_date[d] for d in result.trade_dates
+    ]
+    strat_summary = summary_stats(strat_returns, rf_returns)
+
+    plot_etf_equity(
+        trade_dates=result.trade_dates,
+        strat_equity=[point.equity for point in result.points],
+        bench_equity=result.bench_equity,
+        bench_label=bench_label,
+        tracking_start=tracking_start,
+        output=snapshot_dir / "equity.png",
+    )
+    plot_etf_drawdown(
+        trade_dates=result.trade_dates,
+        strat_equity=[point.equity for point in result.points],
+        tracking_start=tracking_start,
+        output=snapshot_dir / "drawdown.png",
+    )
+    plot_portfolio_weights(
+        result.points,
+        universe,
+        output=snapshot_dir / "weights.png",
+        title="ETF portfolio weights",
+    )
+    plot_invested_weight(
+        points=result.points,
+        tracking_start=tracking_start,
+        output=snapshot_dir / "invested.png",
+    )
+
+    metric_charts = rolling_metric_charts(
+        points=result.points,
+        bench_returns=result.bench_returns,
+        universe=universe,
+    )
+    sharpe_1y = None
+    for chart in metric_charts:
+        plot_etf_rolling_metric_chart(
+            chart,
+            snapshot_dir / f"{chart.slug}.png",
+            tracking_start=tracking_start,
+            bench_label=f"{bench_label} prior 1y",
+        )
+        if chart.slug == "sharpe" and chart.backtest.values:
+            sharpe_1y = chart.backtest.values[-1]
+
+    plot_backtest_return_histogram(
+        returns=strat_returns,
+        stats=distribution_stats(strat_returns),
+        output=snapshot_dir / "weekly_returns_hist.png",
+    )
+    anchor = tracking_anchor_index(result.trade_dates, tracking_start)
+    rebased = rebased_equity([point.equity for point in result.points], anchor)
+    rebased_drawdowns = drawdown_series(rebased)
+    plot_backtest_drawdown_distribution(
+        drawdowns=rebased_drawdowns,
+        current_drawdown=rebased_drawdowns[-1] if rebased_drawdowns else None,
+        output=snapshot_dir / "drawdown_dist.png",
+    )
+
+    allocations = allocation_rows(
+        universe,
+        latest,
+        yahoo_dir=etf_config.YAHOO_DIR,
+        spark_dir=snapshot_dir / "sparklines",
+        as_of=as_of,
+    )
+    write_sparklines(
+        allocations,
+        yahoo_dir=etf_config.YAHOO_DIR,
+        spark_dir=snapshot_dir / "sparklines",
+        as_of=as_of,
+    )
+
+    build_index_html(
+        output=snapshot_dir / "index.html",
+        universe=universe,
+        generated_at=generated_at,
+        tracking_start=tracking_start,
+        as_of_date=latest.iso_date,
+        strat_stats=strat_summary,
+        drawdown=drawdown_snapshot(result.points),
+        period_returns=period_returns(
+            result.points,
+            strat_returns,
+            tracking_start=tracking_start,
+        ),
+        allocations=allocations,
+        invested_weight=latest.invested_weight,
+        cash_weight=latest.cash_weight,
+        sharpe_1y=sharpe_1y,
+        portfolio_url=etf_config.INVESTENGINE_PORTFOLIO_URL,
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--project-root", type=Path, default=Path.cwd())
+    parser.add_argument("--output", type=Path, default=None, help="Output directory (default: public/)")
+    parser.add_argument(
+        "--tracking-start",
+        default=etf_config.TRACKING_START_DATE,
+        help=f"Tracking start date YYYY-MM-DD (default: {etf_config.TRACKING_START_DATE})",
+    )
+    args = parser.parse_args()
+
+    project_root = args.project_root.resolve()
+    public_dir = args.output or (project_root / "public")
+    builds_dir = public_dir / "builds"
+    public_dir.mkdir(parents=True, exist_ok=True)
+
+    snapshot_id = build_timestamp()
+    snapshot_dir = builds_dir / snapshot_id
+    generated_at = snapshot_id.removesuffix("Z").replace("T", " ")
+    build_snapshot(
+        snapshot_dir=snapshot_dir,
+        project_root=project_root,
+        generated_at=generated_at,
+        tracking_start=args.tracking_start,
+    )
+
+    publish_snapshot_to_root(snapshot_dir, public_dir)
+    write_builds_index(builds_dir)
+
+    print(f"Wrote build snapshot to {snapshot_dir}")
+    print(f"Published current site to {public_dir}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

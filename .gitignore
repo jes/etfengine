@@ -1,0 +1,14 @@
+.cache/
+.venv/
+__pycache__/
+*.py[cod]
+account.live.db
+
+# Fetched / generated data (rebuild via run.sh or etfs/ CLIs)
+etfs/yahoo/
+etfs/_sources/
+etfs/markets.csv
+etfs/output/
+
+# Generated static site
+public/
