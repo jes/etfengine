@@ -10,5 +10,7 @@ etfs/_sources/
 etfs/markets.csv
 etfs/output/
 
-# Generated static site
+# Generated static site (rebuilt by build_site.py / run.sh)
 public/
+public/index.html
+public/builds/
