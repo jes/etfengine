@@ -64,6 +64,8 @@ class AllocationRow:
     weight_pct: float
     spark_path: str
     return_1y: float | None
+    ie_weight_pct: float | None = None
+    icon_path: str = ""
 
 
 def tracking_anchor_index(dates: list[str], tracking_start: str) -> int:
@@ -431,8 +433,12 @@ def allocation_rows(
     yahoo_dir: Path,
     spark_dir: Path,
     as_of: date,
+    ie_weights_by_market_id: dict[str, float] | None = None,
+    ie_icons_by_market_id: dict[str, str] | None = None,
 ) -> list[AllocationRow]:
     spark_dir.mkdir(parents=True, exist_ok=True)
+    ie_weights = ie_weights_by_market_id or {}
+    ie_icons = ie_icons_by_market_id or {}
     rows: list[AllocationRow] = []
     weights = sorted(
         point.effective_weights.items(),
@@ -451,6 +457,8 @@ def allocation_rows(
                 weight_pct=weight,
                 spark_path=f"sparklines/{spark_name}",
                 return_1y=total_return_from_prices(prices),
+                ie_weight_pct=ie_weights.get(market_id),
+                icon_path=ie_icons.get(market_id, ""),
             )
         )
     if point.cash_weight > 1e-6:

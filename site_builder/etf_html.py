@@ -11,6 +11,7 @@ from site_builder.etf_data import (
     PeriodReturnRow,
     SummaryStats,
 )
+from site_builder.investengine_portfolio import InvestEngineSnapshot
 from strategy.data import Universe
 
 
@@ -88,6 +89,27 @@ def _summary_panel(label: str, value: str, *, tone: str = "neutral", detail: str
     )
 
 
+def _icon_cell(icon_path: str, alt: str) -> str:
+    if not icon_path:
+        return ""
+    return (
+        f'<img class="holding-icon" src="{html.escape(icon_path)}" '
+        f'alt="{html.escape(alt)}" width="24" height="24"> '
+    )
+
+
+def _source_badge(source: str) -> str:
+    return f'<span class="source-badge {html.escape(source)}">{html.escape(source)}</span>'
+
+
+def _weight_cell(value: float | None) -> str:
+    if value is None:
+        return "—"
+    if value != value:
+        return "n/a"
+    return f"{value:.2%}"
+
+
 def build_index_html(
     *,
     output: Path,
@@ -103,6 +125,7 @@ def build_index_html(
     cash_weight: float,
     sharpe_1y: float | None,
     portfolio_url: str | None = None,
+    ie_snapshot: InvestEngineSnapshot | None = None,
 ) -> None:
     lines: list[str] = [
         "<!DOCTYPE html>",
@@ -125,6 +148,13 @@ def build_index_html(
         ".panel-detail { color: #444; font-size: 0.86rem; line-height: 1.45; margin-top: 8px; }",
         ".generated { color: #666; font-size: 0.86rem; margin-top: -6px; }",
         ".portfolio-link { margin: 0 0 12px; font-size: 1rem; }",
+        ".source-note { color: #444; font-size: 0.92rem; line-height: 1.5; max-width: 72rem; }",
+        ".source-badge { display: inline-block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; border-radius: 4px; padding: 1px 6px; margin-right: 4px; vertical-align: middle; }",
+        ".source-badge.backtest { color: #1f4f82; background: #e8f1fb; border: 1px solid #b8d4f0; }",
+        ".source-badge.investengine { color: #5a3d12; background: #fff4df; border: 1px solid #f0d7a8; }",
+        ".holding-icon { width: 24px; height: 24px; object-fit: contain; vertical-align: middle; margin-right: 6px; }",
+        ".region-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }",
+        "h3.source-heading { margin: 1.5rem 0 0.5rem; font-size: 1.05rem; }",
         "</style>",
         "</head>",
         "<body>",
@@ -214,9 +244,20 @@ def build_index_html(
             "<p><img class=\"chart\" src=\"weekly_returns_hist.png\" alt=\"Weekly return histogram\"></p>",
             "<h2>Drawdown distribution</h2>",
             "<p><img class=\"chart\" src=\"drawdown_dist.png\" alt=\"Drawdown distribution\"></p>",
-            "<h2>Target weights</h2>",
+            "<h2>Portfolio weights</h2>",
+            "<p class=\"source-note\">"
+            f"{_source_badge('backtest')} Simulated effective weights from the monthly walk-forward model "
+            f"(as of {html.escape(as_of_date)}). "
+            f"{_source_badge('investengine')} Live ETF weights from the InvestEngine shared portfolio API"
+            + (
+                f" (fetched {html.escape(ie_snapshot.fetched_date)})."
+                if ie_snapshot
+                else " (not available for this build)."
+            )
+            + " Return sparklines use Yahoo prices and are backtest context only."
+            "</p>",
             "<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\">",
-            "<tr><th>ETF</th><th>Weight</th><th>Return (1y)</th></tr>",
+            "<tr><th>ETF</th><th>Backtest weight</th><th>InvestEngine weight</th><th>Return (1y)</th></tr>",
         ]
     )
     if allocations:
@@ -229,18 +270,65 @@ def build_index_html(
                 if row.spark_path
                 else ""
             )
+            icon_html = _icon_cell(row.icon_path, row.label)
             lines.append(
                 "<tr>"
-                f"<td>{html.escape(row.label)}</td>"
-                f"<td>{row.weight_pct:.2%}</td>"
+                f"<td>{icon_html}{html.escape(row.label)}</td>"
+                f"<td>{_weight_cell(row.weight_pct if row.weight_pct > 1e-6 else None)}</td>"
+                f"<td>{_weight_cell(row.ie_weight_pct)}</td>"
                 f"<td>{return_label}{spark_html}</td>"
                 "</tr>"
             )
     else:
-        lines.append("<tr><td colspan=\"3\">No holdings.</td></tr>")
+        lines.append("<tr><td colspan=\"4\">No holdings.</td></tr>")
+    lines.append("</table>")
+
+    if ie_snapshot and ie_snapshot.equity_holdings:
+        lines.extend(
+            [
+                "<h3 class=\"source-heading\">Top 20 look-through equities "
+                f"{_source_badge('investengine')}</h3>",
+                "<p class=\"source-note\">Underlying stock exposures reported by InvestEngine "
+                "(look-through from ETF holdings). Not from the backtest model.</p>",
+                "<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\">",
+                "<tr><th>Equity</th><th>Look-through weight</th></tr>",
+            ]
+        )
+        for row in ie_snapshot.equity_holdings:
+            icon_html = _icon_cell(row.icon_path, row.name)
+            lines.append(
+                "<tr>"
+                f"<td>{icon_html}{html.escape(row.name)}</td>"
+                f"<td>{_weight_cell(row.weight_pct)}</td>"
+                "</tr>"
+            )
+        lines.append("</table>")
+
+    if ie_snapshot and ie_snapshot.region_breakdown:
+        lines.extend(
+            [
+                "<h3 class=\"source-heading\">Regional breakdown "
+                f"{_source_badge('investengine')}</h3>",
+                "<p class=\"source-note\">InvestEngine regional look-through exposure "
+                "(closest available geographic split in the shared portfolio API; not country-level).</p>",
+                "<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\">",
+                "<tr><th>Region</th><th>Look-through weight</th></tr>",
+            ]
+        )
+        for row in ie_snapshot.region_breakdown:
+            swatch = (
+                f'<span class="region-swatch" style="background: {html.escape(row.color)}"></span>'
+            )
+            lines.append(
+                "<tr>"
+                f"<td>{swatch}{html.escape(row.name)}</td>"
+                f"<td>{_weight_cell(row.weight_pct)}</td>"
+                "</tr>"
+            )
+        lines.append("</table>")
+
     lines.extend(
         [
-            "</table>",
             "<p><a href=\"/builds/\">Previous builds</a></p>",
             "<h2>Methodology</h2>",
             "<p>Monthly walk-forward backtest on the InvestEngine ISA ETF universe. "
@@ -250,7 +338,9 @@ def build_index_html(
             "bid–ask spread drag. Uninvested cash earns the US fed funds rate.</p>",
             "<p>Benchmark: VWRP (FTSE All-World accumulating). Strategy and benchmark "
             "curves are rebased to equity = 1.0 at the tracking start date. "
-            "There is no live account integration — this is an ongoing backtest.</p>",
+            "Charts, summary stats, and backtest weight columns are simulated only. "
+            "InvestEngine tables and weight columns come from the live shared portfolio API "
+            "and are labelled accordingly.</p>",
             "</body>",
             "</html>",
         ]

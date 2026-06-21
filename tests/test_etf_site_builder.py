@@ -126,7 +126,8 @@ class EtfSiteBuilderTests(unittest.TestCase):
             self.assertIn("ETF Engine", text)
             self.assertIn("InvestEngine portfolio", text)
             self.assertIn("https://investengine.com/share/portfolio/example/", text)
-            self.assertIn("Target weights", text)
+            self.assertIn("Portfolio weights", text)
+            self.assertIn("Backtest weight", text)
             self.assertIn("tracking from 2026-06-20", text)
             self.assertNotIn("VWRP CAGR", text)
 

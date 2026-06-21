@@ -24,6 +24,13 @@ from sharpening_backtest import (  # noqa: E402
     run_etf_backtest,
     write_diagnostics,
 )
+from site_builder.investengine_portfolio import (  # noqa: E402
+    InvestEngineSnapshot,
+    append_ie_only_allocations,
+    ie_icons_by_market_id,
+    latest_portfolio_json,
+    load_investengine_snapshot,
+)
 from site_builder.etf_data import (  # noqa: E402
     allocation_rows,
     drawdown_snapshot,
@@ -50,6 +57,27 @@ from site_builder.publish import (  # noqa: E402
     write_builds_index,
 )
 from strategy.constants import RISK_FREE_ID  # noqa: E402
+
+
+def _load_ie_snapshot(
+    *,
+    project_root: Path,
+    snapshot_dir: Path,
+    universe,
+    as_of: date,
+) -> InvestEngineSnapshot | None:
+    json_dir = project_root / etf_config.INVESTENGINE_JSON_DIR
+    json_path = latest_portfolio_json(json_dir, prefer_date=as_of)
+    if json_path is None:
+        print("No InvestEngine portfolio JSON found; skipping live portfolio tables.", flush=True)
+        return None
+    print(f"Loading InvestEngine portfolio from {json_path}…", flush=True)
+    return load_investengine_snapshot(
+        json_path,
+        universe=universe,
+        icons_cache_dir=project_root / etf_config.INVESTENGINE_ICONS_CACHE_DIR,
+        snapshot_icons_dir=snapshot_dir / "icons",
+    )
 
 
 def build_snapshot(
@@ -150,12 +178,29 @@ def build_snapshot(
         output=snapshot_dir / "drawdown_dist.png",
     )
 
+    ie_snapshot = _load_ie_snapshot(
+        project_root=project_root,
+        snapshot_dir=snapshot_dir,
+        universe=universe,
+        as_of=as_of,
+    )
+    ie_weights = ie_snapshot.etf_weights_by_market_id if ie_snapshot else None
+    ie_icons = ie_icons_by_market_id(ie_snapshot) if ie_snapshot else None
+
     allocations = allocation_rows(
         universe,
         latest,
         yahoo_dir=etf_config.YAHOO_DIR,
         spark_dir=snapshot_dir / "sparklines",
         as_of=as_of,
+        ie_weights_by_market_id=ie_weights,
+        ie_icons_by_market_id=ie_icons,
+    )
+    allocations = append_ie_only_allocations(
+        allocations,
+        universe=universe,
+        ie_snapshot=ie_snapshot,
+        risk_free_id=RISK_FREE_ID,
     )
     write_sparklines(
         allocations,
@@ -182,6 +227,7 @@ def build_snapshot(
         cash_weight=latest.cash_weight,
         sharpe_1y=sharpe_1y,
         portfolio_url=etf_config.INVESTENGINE_PORTFOLIO_URL,
+        ie_snapshot=ie_snapshot,
     )
 
 

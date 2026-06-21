@@ -10,11 +10,17 @@ TRACKING_START_DATE = "2026-06-20"
 BENCHMARK_ID = "ie00bk5bqt80"  # VWRP.L
 BENCHMARK_LABEL = "VWRP"
 
+INVESTENGINE_PORTFOLIO_API_URL = (
+    "https://investengine.com/api/v0.33/public/shared_portfolio/"
+    "5ca383e6593408b7dca1d4140abd788324418369/"
+)
 # Live portfolio on InvestEngine (shared link).
 INVESTENGINE_PORTFOLIO_URL = (
     "https://investengine.com/share/portfolio/"
     "5ca383e6593408b7dca1d4140abd788324418369/"
 )
+INVESTENGINE_JSON_DIR = Path("public/json")
+INVESTENGINE_ICONS_CACHE_DIR = Path("public/icons/cache")
 
 ETFS_DIR = Path(__file__).resolve().parent
 MARKETS_MANIFEST = ETFS_DIR / "markets.csv"
