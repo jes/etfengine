@@ -7,11 +7,13 @@ from pathlib import Path
 
 from site_builder.etf_data import (
     AllocationRow,
+    AthSnapshot,
     DrawdownSnapshot,
     PeriodReturnRow,
     SummaryStats,
 )
 from site_builder.investengine_portfolio import InvestEngineSnapshot
+from site_builder.metrics import BenchmarkRegressionStats
 from strategy.data import Universe
 
 
@@ -118,7 +120,10 @@ def build_index_html(
     tracking_start: str,
     as_of_date: str,
     strat_stats: SummaryStats,
+    bench_regression: BenchmarkRegressionStats,
+    bench_label: str,
     drawdown: DrawdownSnapshot,
+    ath: AthSnapshot,
     period_returns: list[PeriodReturnRow],
     allocations: list[AllocationRow],
     invested_weight: float,
@@ -188,6 +193,21 @@ def build_index_html(
             tone="neutral",
         ),
         _summary_panel(
+            f"Beta vs {bench_label}",
+            html.escape(_plain_number(bench_regression.beta, decimals=3)),
+            tone="neutral",
+        ),
+        _summary_panel(
+            f"Alpha vs {bench_label} (ann.)",
+            _coloured_pct(bench_regression.alpha_ann),
+            tone=_panel_tone(bench_regression.alpha_ann),
+        ),
+        _summary_panel(
+            f"Residual vol vs {bench_label} (ann.)",
+            html.escape(_pct(bench_regression.residual_vol_ann, signed=False)),
+            tone="neutral",
+        ),
+        _summary_panel(
             "Sharpe (1y trailing)",
             html.escape(_plain_number(sharpe_1y)),
             tone="neutral",
@@ -197,6 +217,14 @@ def build_index_html(
             _coloured_pct(drawdown.drawdown_pct if drawdown.drawdown_pct is not None else float("nan")),
             tone=_panel_tone(drawdown.drawdown_pct),
             detail=html.escape(_backtest_dd_fraction(drawdown.backtest_time_fraction_pct)),
+        ),
+        _summary_panel(
+            "Days since ATH",
+            html.escape(
+                str(ath.days_since_ath) if ath.days_since_ath is not None else "n/a"
+            ),
+            tone="neutral",
+            detail=html.escape(_backtest_percentile(ath.backtest_time_fraction_pct)),
         ),
         _summary_panel(
             "Invested weight",
@@ -244,6 +272,8 @@ def build_index_html(
             "<p><img class=\"chart\" src=\"weekly_returns_hist.png\" alt=\"Weekly return histogram\"></p>",
             "<h2>Drawdown distribution</h2>",
             "<p><img class=\"chart\" src=\"drawdown_dist.png\" alt=\"Drawdown distribution\"></p>",
+            "<h2>Days since ATH distribution</h2>",
+            "<p><img class=\"chart\" src=\"ath_dist.png\" alt=\"Days since ATH distribution\"></p>",
             "<h2>Portfolio weights</h2>",
             "<p class=\"source-note\">"
             f"{_source_badge('backtest')} Simulated effective weights from the monthly walk-forward model "
@@ -338,6 +368,8 @@ def build_index_html(
             "bid–ask spread drag. Uninvested cash earns the US fed funds rate.</p>",
             "<p>Benchmark: VWRP (FTSE All-World accumulating). Strategy and benchmark "
             "curves are rebased to equity = 1.0 at the tracking start date. "
+            f"Alpha, beta, and residual vol are from an OLS regression of weekly strategy "
+            f"returns on {html.escape(bench_label)} over the full backtest. "
             "Charts, summary stats, and backtest weight columns are simulated only. "
             "InvestEngine tables and weight columns come from the live shared portfolio API "
             "and are labelled accordingly.</p>",

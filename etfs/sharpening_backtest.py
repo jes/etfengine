@@ -15,6 +15,8 @@ from pathlib import Path
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -503,6 +505,53 @@ CASH_WEIGHT_KEY = "__cash__"
 CASH_COLOR = (0.82, 0.82, 0.82, 1.0)
 STACK_EDGE_COLOR = "black"
 STACK_EDGE_WIDTH = 1.0
+WEIGHT_LEGEND_THRESHOLD = 1e-6
+
+
+def weight_legend_indices(
+    current_weights: list[float] | np.ndarray,
+    *,
+    threshold: float = WEIGHT_LEGEND_THRESHOLD,
+) -> list[int | None]:
+    """Legend order: current holdings top-to-bottom, separator, then inactive top-to-bottom."""
+    active: list[int] = []
+    inactive: list[int] = []
+    for index, weight in enumerate(current_weights):
+        if weight > threshold:
+            active.append(index)
+        else:
+            inactive.append(index)
+    order: list[int | None] = list(reversed(active))
+    if active and inactive:
+        order.append(None)
+    order.extend(reversed(inactive))
+    return order
+
+
+def weight_legend_handles(
+    labels: list[str],
+    colors: list[tuple[float, float, float, float]],
+    current_weights: list[float] | np.ndarray,
+) -> list[Patch | Line2D]:
+    patch_kw = {"edgecolor": STACK_EDGE_COLOR, "linewidth": STACK_EDGE_WIDTH}
+    handles: list[Patch | Line2D] = []
+    for index in weight_legend_indices(current_weights):
+        if index is None:
+            handles.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color="#808080",
+                    linewidth=0.8,
+                    marker="none",
+                    label="",
+                )
+            )
+            continue
+        handles.append(
+            Patch(facecolor=colors[index], label=labels[index], **patch_kw)
+        )
+    return handles
 
 
 def stack_plot_colors(n: int) -> list[tuple[float, float, float, float]]:
@@ -605,6 +654,7 @@ def plot_portfolio_weights(
     ax.xaxis.set_major_locator(mdates.YearLocator())
     ax.grid(True, alpha=0.25, axis="y")
     ax.legend(
+        handles=weight_legend_handles(labels, colors, weights[:, -1]),
         loc="center left",
         bbox_to_anchor=(1.02, 0.5),
         fontsize=7.5,

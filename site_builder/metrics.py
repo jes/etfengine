@@ -49,6 +49,13 @@ class RollingMetricChart:
     live_scatter: MetricScatterSeries
 
 
+@dataclass(frozen=True)
+class BenchmarkRegressionStats:
+    alpha_ann: float
+    beta: float
+    residual_vol_ann: float
+
+
 def parse_timestamp(ts: str) -> datetime:
     return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(UTC)
 
@@ -99,6 +106,48 @@ def distribution_stats(returns: list[float]) -> ReturnDistributionStats | None:
     )
 
 
+def benchmark_regression_stats(
+    strategy_returns: list[float],
+    benchmark_returns: list[float],
+) -> BenchmarkRegressionStats:
+    """OLS of weekly strategy returns on benchmark: r_s = alpha + beta * r_b + eps."""
+    nan = float("nan")
+    if len(strategy_returns) != len(benchmark_returns):
+        raise ValueError("strategy and benchmark return series must have equal length")
+    count = len(strategy_returns)
+    if count < 2:
+        return BenchmarkRegressionStats(alpha_ann=nan, beta=nan, residual_vol_ann=nan)
+
+    mean_strategy = sum(strategy_returns) / count
+    mean_benchmark = sum(benchmark_returns) / count
+    covariance = sum(
+        (strategy - mean_strategy) * (benchmark - mean_benchmark)
+        for strategy, benchmark in zip(strategy_returns, benchmark_returns, strict=True)
+    ) / (count - 1)
+    benchmark_variance = sum(
+        (benchmark - mean_benchmark) ** 2 for benchmark in benchmark_returns
+    ) / (count - 1)
+    if benchmark_variance <= 0:
+        return BenchmarkRegressionStats(alpha_ann=nan, beta=nan, residual_vol_ann=nan)
+
+    beta = covariance / benchmark_variance
+    alpha_weekly = mean_strategy - beta * mean_benchmark
+    residuals = [
+        strategy - alpha_weekly - beta * benchmark
+        for strategy, benchmark in zip(strategy_returns, benchmark_returns, strict=True)
+    ]
+    residual_mean = sum(residuals) / count
+    residual_variance = sum((value - residual_mean) ** 2 for value in residuals) / (
+        count - 2
+    )
+    residual_vol_weekly = math.sqrt(residual_variance) if residual_variance > 0 else 0.0
+    return BenchmarkRegressionStats(
+        alpha_ann=alpha_weekly * WEEKS_PER_YEAR,
+        beta=beta,
+        residual_vol_ann=residual_vol_weekly * math.sqrt(WEEKS_PER_YEAR),
+    )
+
+
 def drawdown_series(equity_curve: list[float]) -> list[float]:
     if not equity_curve:
         return []
@@ -117,6 +166,28 @@ def fraction_same_or_worse(value: float, distribution: list[float]) -> float | N
     return 100.0 * count / len(distribution)
 
 
+def fraction_at_least(value: float, distribution: list[float]) -> float | None:
+    if not distribution:
+        return None
+    count = sum(1 for sample in distribution if sample >= value)
+    return 100.0 * count / len(distribution)
+
+
+def days_since_ath_series(trade_dates: list[str], equities: list[float]) -> list[int]:
+    if not trade_dates:
+        return []
+    peak_date = date.fromisoformat(trade_dates[0])
+    peak_equity = equities[0] if equities else 0.0
+    series: list[int] = []
+    for iso_date, equity in zip(trade_dates, equities, strict=True):
+        point_date = date.fromisoformat(iso_date)
+        if equity >= peak_equity:
+            peak_equity = equity
+            peak_date = point_date
+        series.append((point_date - peak_date).days)
+    return series
+
+
 def drawdown_exceedance_curve(
     drawdowns: list[float],
     *,
@@ -127,6 +198,20 @@ def drawdown_exceedance_curve(
     low = min(drawdowns)
     xs = [low + (0.0 - low) * index / (steps - 1) for index in range(steps)]
     ys = [fraction_same_or_worse(level, drawdowns) or 0.0 for level in xs]
+    return xs, ys
+
+
+def ath_exceedance_curve(
+    days_since_ath: list[int],
+    *,
+    steps: int = 100,
+) -> tuple[list[float], list[float]]:
+    if not days_since_ath or steps < 2:
+        return [], []
+    high = float(max(days_since_ath))
+    xs = [high * index / (steps - 1) for index in range(steps)]
+    floats = [float(value) for value in days_since_ath]
+    ys = [fraction_at_least(level, floats) or 0.0 for level in xs]
     return xs, ys
 
 

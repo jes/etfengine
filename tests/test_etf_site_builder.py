@@ -10,12 +10,14 @@ from pathlib import Path
 from site_builder.etf_data import (
     SummaryStats,
     allocation_rows,
+    ath_snapshot,
     drawdown_snapshot,
     period_returns,
     rebased_equity,
     summary_stats,
     tracking_anchor_index,
 )
+from site_builder.metrics import BenchmarkRegressionStats, benchmark_regression_stats, days_since_ath_series
 from site_builder.etf_html import build_index_html
 from strategy.data import Asset, Universe
 
@@ -88,6 +90,29 @@ class EtfSiteBuilderTests(unittest.TestCase):
         snap = drawdown_snapshot(points)
         self.assertAlmostEqual(snap.drawdown_pct or 0.0, -0.1)
 
+    def test_days_since_ath_series(self) -> None:
+        dates = ["2026-01-01", "2026-01-08", "2026-01-15", "2026-01-22"]
+        equities = [1.0, 1.1, 1.05, 1.12]
+        self.assertEqual(days_since_ath_series(dates, equities), [0, 0, 7, 0])
+
+    def test_ath_snapshot(self) -> None:
+        points = [
+            FakePoint("2026-01-01", 1.0, 0.0, 1.0, 0.0, {}, {}),
+            FakePoint("2026-01-08", 1.1, 0.1, 1.0, 0.0, {}, {}),
+            FakePoint("2026-01-15", 1.05, -0.05, 1.0, 0.0, {}, {}),
+        ]
+        snap = ath_snapshot(points)
+        self.assertEqual(snap.days_since_ath, 7)
+        self.assertAlmostEqual(snap.backtest_time_fraction_pct or 0.0, 100.0 / 3.0)
+
+    def test_benchmark_regression_stats(self) -> None:
+        benchmark = [0.01, 0.02, -0.01, 0.0]
+        strategy = [value * 2.0 for value in benchmark]
+        stats = benchmark_regression_stats(strategy, benchmark)
+        self.assertAlmostEqual(stats.beta, 2.0)
+        self.assertAlmostEqual(stats.alpha_ann, 0.0, places=9)
+        self.assertAlmostEqual(stats.residual_vol_ann, 0.0, places=9)
+
     def test_build_index_html_writes_file(self) -> None:
         universe = _fake_universe()
         point = FakePoint(
@@ -108,7 +133,10 @@ class EtfSiteBuilderTests(unittest.TestCase):
                 tracking_start="2026-06-20",
                 as_of_date="2026-06-01",
                 strat_stats=SummaryStats(0.1, 0.2, 0.5, 0.08),
+                bench_regression=BenchmarkRegressionStats(0.01, 0.85, 0.06),
+                bench_label="VWRP",
                 drawdown=drawdown_snapshot([point]),
+                ath=ath_snapshot([point]),
                 period_returns=period_returns([point], [0.02], tracking_start="2026-06-20"),
                 allocations=allocation_rows(
                     universe,
@@ -129,6 +157,9 @@ class EtfSiteBuilderTests(unittest.TestCase):
             self.assertIn("Portfolio weights", text)
             self.assertIn("Backtest weight", text)
             self.assertIn("tracking from 2026-06-20", text)
+            self.assertIn("Days since ATH", text)
+            self.assertIn("Beta vs VWRP", text)
+            self.assertIn("Alpha vs VWRP", text)
             self.assertNotIn("VWRP CAGR", text)
 
 

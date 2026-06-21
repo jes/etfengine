@@ -5,13 +5,15 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from matplotlib.ticker import PercentFormatter
+from matplotlib.ticker import FuncFormatter, NullFormatter, PercentFormatter
 
 from site_builder.metrics import (
     ReturnDistributionStats,
     RollingMetricChart,
+    ath_exceedance_curve,
     drawdown_exceedance_curve,
     drawdown_series,
+    fraction_at_least,
     fraction_same_or_worse,
 )
 from site_builder.etf_data import WeekPointLike, rebased_equity, tracking_anchor_index
@@ -29,6 +31,12 @@ from site_builder.plots import (
     plot_sparkline,
     plot_weekly_return_histogram,
 )
+
+
+def _equity_log_tick(value: float, _position: int) -> str:
+    if value <= 0:
+        return ""
+    return f"{value:.1f}"
 
 
 def plot_etf_equity(
@@ -66,7 +74,10 @@ def plot_etf_equity(
         linewidth=RRD_PIXEL,
         label="Tracking start",
     )
-    ax.set_ylabel("Equity (rebased to 1.0 at tracking start)")
+    ax.set_yscale("log")
+    ax.yaxis.set_major_formatter(FuncFormatter(_equity_log_tick))
+    ax.yaxis.set_minor_formatter(NullFormatter())
+    ax.set_ylabel("Equity (log scale, rebased to 1.0 at tracking start)")
     ax.set_title("Equity")
     _rrd_legend(ax, loc="upper left")
     fig.autofmt_xdate()
@@ -202,6 +213,48 @@ def plot_backtest_drawdown_distribution(
         ax.set_title("Drawdown distribution")
         ax.yaxis.set_major_formatter(PercentFormatter(xmax=100.0))
         ax.xaxis.set_major_formatter(PercentFormatter(xmax=1.0))
+        ax.grid(True, color=RRD_GRID, linewidth=RRD_PIXEL, axis="y")
+        _rrd_legend(ax, loc="lower right")
+    fig.subplots_adjust(left=0.1, right=0.98, top=0.88, bottom=0.18)
+    _save_rrd(fig, output)
+
+
+def plot_backtest_ath_distribution(
+    *,
+    days_since_ath: list[int],
+    output: Path,
+    current_days_since_ath: int | None = None,
+) -> None:
+    fig, ax = _rrd_subplots(1200, 600)
+    _apply_rrd_axis(ax)
+    if not days_since_ath:
+        ax.text(0.5, 0.5, "No ATH data", ha="center", va="center", transform=ax.transAxes)
+        ax.axis("off")
+    else:
+        xs, ys = ath_exceedance_curve(days_since_ath)
+        _rrd_plot(ax, xs, ys, color=RRD_BLUE, label="Strategy")
+        marker_days = (
+            current_days_since_ath
+            if current_days_since_ath is not None
+            else days_since_ath[-1]
+        )
+        floats = [float(value) for value in days_since_ath]
+        marker_y = fraction_at_least(float(marker_days), floats)
+        if marker_y is not None:
+            ax.scatter(
+                [float(marker_days)],
+                [marker_y],
+                s=36,
+                color=RRD_ORANGE,
+                edgecolors=RRD_BLACK,
+                linewidths=RRD_PIXEL,
+                zorder=5,
+                label="Current",
+            )
+        ax.set_xlabel("Days since ATH")
+        ax.set_ylabel("% of weeks at this level or worse")
+        ax.set_title("Days since ATH distribution")
+        ax.yaxis.set_major_formatter(PercentFormatter(xmax=100.0))
         ax.grid(True, color=RRD_GRID, linewidth=RRD_PIXEL, axis="y")
         _rrd_legend(ax, loc="lower right")
     fig.subplots_adjust(left=0.1, right=0.98, top=0.88, bottom=0.18)

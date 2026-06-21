@@ -33,6 +33,7 @@ from site_builder.investengine_portfolio import (  # noqa: E402
 )
 from site_builder.etf_data import (  # noqa: E402
     allocation_rows,
+    ath_snapshot,
     drawdown_snapshot,
     period_returns,
     rebased_equity,
@@ -42,6 +43,7 @@ from site_builder.etf_data import (  # noqa: E402
 )
 from site_builder.etf_html import build_index_html  # noqa: E402
 from site_builder.etf_plots import (  # noqa: E402
+    plot_backtest_ath_distribution,
     plot_backtest_drawdown_distribution,
     plot_backtest_return_histogram,
     plot_etf_drawdown,
@@ -50,7 +52,12 @@ from site_builder.etf_plots import (  # noqa: E402
     plot_invested_weight,
     write_sparklines,
 )
-from site_builder.metrics import distribution_stats, drawdown_series  # noqa: E402
+from site_builder.metrics import (  # noqa: E402
+    benchmark_regression_stats,
+    days_since_ath_series,
+    distribution_stats,
+    drawdown_series,
+)
 from site_builder.publish import (  # noqa: E402
     build_timestamp,
     publish_snapshot_to_root,
@@ -121,6 +128,7 @@ def build_snapshot(
         universe.assets[RISK_FREE_ID].returns_by_date[d] for d in result.trade_dates
     ]
     strat_summary = summary_stats(strat_returns, rf_returns)
+    bench_regression = benchmark_regression_stats(strat_returns, result.bench_returns)
 
     plot_etf_equity(
         trade_dates=result.trade_dates,
@@ -177,6 +185,12 @@ def build_snapshot(
         current_drawdown=rebased_drawdowns[-1] if rebased_drawdowns else None,
         output=snapshot_dir / "drawdown_dist.png",
     )
+    days_since_ath = days_since_ath_series(result.trade_dates, rebased)
+    plot_backtest_ath_distribution(
+        days_since_ath=days_since_ath,
+        current_days_since_ath=days_since_ath[-1] if days_since_ath else None,
+        output=snapshot_dir / "ath_dist.png",
+    )
 
     ie_snapshot = _load_ie_snapshot(
         project_root=project_root,
@@ -216,7 +230,10 @@ def build_snapshot(
         tracking_start=tracking_start,
         as_of_date=latest.iso_date,
         strat_stats=strat_summary,
+        bench_regression=bench_regression,
+        bench_label=bench_label,
         drawdown=drawdown_snapshot(result.points),
+        ath=ath_snapshot(result.points),
         period_returns=period_returns(
             result.points,
             strat_returns,

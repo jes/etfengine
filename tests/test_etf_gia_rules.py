@@ -12,7 +12,7 @@ from etfs.fetch_investengine_universe import (
     extract_securities,
     filter_securities,
 )
-from etfs.sharpening_backtest import investengine_market_ids
+from etfs.sharpening_backtest import investengine_market_ids, weight_legend_indices
 from etfs.sharpening_optimizer import (
     build_etf_weight_schedule,
     default_ewma_span,
@@ -171,6 +171,15 @@ class InvestEngineUniverseTests(unittest.TestCase):
         filtered = filter_securities(securities, dividends="distributing")
 
         self.assertEqual([security["isin"] for security in filtered], ["IE00DIST"])
+
+
+class WeightLegendTests(unittest.TestCase):
+    def test_weight_legend_indices_groups_active_before_inactive(self) -> None:
+        order = weight_legend_indices([0.0, 0.4, 0.0, 0.6, 0.0])
+        self.assertEqual(order, [3, 1, None, 4, 2, 0])
+
+    def test_weight_legend_indices_no_separator_when_all_active(self) -> None:
+        self.assertEqual(weight_legend_indices([0.5, 0.5]), [1, 0])
 
 
 if __name__ == "__main__":

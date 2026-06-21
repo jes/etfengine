@@ -14,8 +14,10 @@ from site_builder.metrics import (
     MetricScatterSeries,
     ReturnDistributionStats,
     RollingMetricChart,
+    days_since_ath_series,
     distribution_stats,
     drawdown_series,
+    fraction_at_least,
     fraction_same_or_worse,
     percentile_of,
     rolling_compound_returns,
@@ -46,6 +48,12 @@ class PeriodReturnRow:
 @dataclass(frozen=True)
 class DrawdownSnapshot:
     drawdown_pct: float | None
+    backtest_time_fraction_pct: float | None
+
+
+@dataclass(frozen=True)
+class AthSnapshot:
+    days_since_ath: int | None
     backtest_time_fraction_pct: float | None
 
 
@@ -257,6 +265,20 @@ def drawdown_snapshot(points: list[WeekPointLike]) -> DrawdownSnapshot:
     return DrawdownSnapshot(
         drawdown_pct=current,
         backtest_time_fraction_pct=fraction_same_or_worse(current, drawdowns),
+    )
+
+
+def ath_snapshot(points: list[WeekPointLike]) -> AthSnapshot:
+    if not points:
+        return AthSnapshot(days_since_ath=None, backtest_time_fraction_pct=None)
+    dates = [point.iso_date for point in points]
+    equities = [point.equity for point in points]
+    series = days_since_ath_series(dates, equities)
+    current = series[-1]
+    floats = [float(value) for value in series]
+    return AthSnapshot(
+        days_since_ath=current,
+        backtest_time_fraction_pct=fraction_at_least(float(current), floats),
     )
 
 
