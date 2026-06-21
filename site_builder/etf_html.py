@@ -129,6 +129,7 @@ def build_index_html(
         "</head>",
         "<body>",
         "<h1>ETF Engine</h1>",
+        "<a href=\"/\">Sharpening</a>",
     ]
     if portfolio_url:
         lines.append(
