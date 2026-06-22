@@ -13,6 +13,7 @@ from site_builder.etf_data import (
     ath_snapshot,
     drawdown_snapshot,
     period_returns,
+    point_at_or_before,
     rebased_equity,
     summary_stats,
     tracking_anchor_index,
@@ -113,6 +114,50 @@ class EtfSiteBuilderTests(unittest.TestCase):
         self.assertAlmostEqual(stats.alpha_ann, 0.0, places=9)
         self.assertAlmostEqual(stats.residual_vol_ann, 0.0, places=9)
 
+    def test_point_at_or_before(self) -> None:
+        points = [
+            FakePoint("2025-01-01", 1.0, 0.0, 1.0, 0.0, {"a": 1.0}, {"a": 1.0}),
+            FakePoint("2026-01-01", 1.1, 0.1, 1.0, 0.0, {"a": 0.8, "b": 0.2}, {"a": 1.0}),
+        ]
+        self.assertEqual(point_at_or_before(points, "2025-06-01").iso_date, "2025-01-01")
+        self.assertEqual(point_at_or_before(points, "2026-06-01").iso_date, "2026-01-01")
+        self.assertIsNone(point_at_or_before(points, "2024-01-01"))
+
+    def test_allocation_rows_includes_weight_change_1y(self) -> None:
+        universe = _fake_universe()
+        point = FakePoint(
+            "2026-06-01",
+            1.1,
+            0.02,
+            0.95,
+            0.05,
+            {"ie00bk5bqt80": 0.95},
+            {"ie00bk5bqt80": 1.0},
+        )
+        point_1y_ago = FakePoint(
+            "2025-06-01",
+            1.0,
+            0.0,
+            0.82,
+            0.18,
+            {"ie00bk5bqt80": 0.82},
+            {"ie00bk5bqt80": 1.0},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = allocation_rows(
+                universe,
+                point,
+                yahoo_dir=Path("/nonexistent"),
+                spark_dir=Path(tmp) / "sparklines",
+                as_of=date(2026, 6, 1),
+                point_1y_ago=point_1y_ago,
+            )
+        self.assertEqual(len(rows), 2)
+        etf_row = next(row for row in rows if row.market_id == "ie00bk5bqt80")
+        cash_row = next(row for row in rows if row.market_id == "__cash__")
+        self.assertAlmostEqual(etf_row.weight_change_1y or 0.0, 0.13)
+        self.assertAlmostEqual(cash_row.weight_change_1y or 0.0, -0.13)
+
     def test_build_index_html_writes_file(self) -> None:
         universe = _fake_universe()
         point = FakePoint(
@@ -122,6 +167,15 @@ class EtfSiteBuilderTests(unittest.TestCase):
             0.95,
             0.05,
             {"ie00bk5bqt80": 0.95},
+            {"ie00bk5bqt80": 1.0},
+        )
+        point_1y_ago = FakePoint(
+            "2025-06-01",
+            1.0,
+            0.0,
+            0.82,
+            0.18,
+            {"ie00bk5bqt80": 0.82},
             {"ie00bk5bqt80": 1.0},
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -144,6 +198,7 @@ class EtfSiteBuilderTests(unittest.TestCase):
                     yahoo_dir=Path("/nonexistent"),
                     spark_dir=Path(tmp) / "sparklines",
                     as_of=date(2026, 6, 1),
+                    point_1y_ago=point_1y_ago,
                 ),
                 invested_weight=0.95,
                 cash_weight=0.05,
@@ -156,6 +211,8 @@ class EtfSiteBuilderTests(unittest.TestCase):
             self.assertIn("https://investengine.com/share/portfolio/example/", text)
             self.assertIn("Portfolio weights", text)
             self.assertIn("Backtest weight", text)
+            self.assertIn("(+13.00pp since 1y ago)", text)
+            self.assertIn('style="color: green"', text)
             self.assertIn("tracking from 2026-06-20", text)
             self.assertIn("Days since ATH", text)
             self.assertIn("Beta vs VWRP", text)

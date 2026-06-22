@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import matplotlib
@@ -36,6 +36,7 @@ from site_builder.etf_data import (  # noqa: E402
     ath_snapshot,
     drawdown_snapshot,
     period_returns,
+    point_at_or_before,
     rebased_equity,
     rolling_metric_charts,
     summary_stats,
@@ -201,6 +202,10 @@ def build_snapshot(
     ie_weights = ie_snapshot.etf_weights_by_market_id if ie_snapshot else None
     ie_icons = ie_icons_by_market_id(ie_snapshot) if ie_snapshot else None
 
+    point_1y_ago = point_at_or_before(
+        result.points,
+        (as_of - timedelta(days=365)).isoformat(),
+    )
     allocations = allocation_rows(
         universe,
         latest,
@@ -209,6 +214,7 @@ def build_snapshot(
         as_of=as_of,
         ie_weights_by_market_id=ie_weights,
         ie_icons_by_market_id=ie_icons,
+        point_1y_ago=point_1y_ago,
     )
     allocations = append_ie_only_allocations(
         allocations,

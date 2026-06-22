@@ -112,6 +112,14 @@ def _weight_cell(value: float | None) -> str:
     return f"{value:.2%}"
 
 
+def _backtest_weight_cell(value: float | None, change_1y: float | None) -> str:
+    base = _weight_cell(value)
+    if change_1y is None or change_1y != change_1y:
+        return base
+    pp_text = f"({change_1y * 100:+.2f}pp since 1y ago)"
+    return f"{base} {_coloured_span(pp_text, change_1y)}"
+
+
 def build_index_html(
     *,
     output: Path,
@@ -304,7 +312,7 @@ def build_index_html(
             lines.append(
                 "<tr>"
                 f"<td>{icon_html}{html.escape(row.label)}</td>"
-                f"<td>{_weight_cell(row.weight_pct if row.weight_pct > 1e-6 else None)}</td>"
+                f"<td>{_backtest_weight_cell(row.weight_pct if row.weight_pct > 1e-6 else None, row.weight_change_1y)}</td>"
                 f"<td>{_weight_cell(row.ie_weight_pct)}</td>"
                 f"<td>{return_label}{spark_html}</td>"
                 "</tr>"

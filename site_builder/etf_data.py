@@ -74,6 +74,7 @@ class AllocationRow:
     return_1y: float | None
     ie_weight_pct: float | None = None
     icon_path: str = ""
+    weight_change_1y: float | None = None
 
 
 def tracking_anchor_index(dates: list[str], tracking_start: str) -> int:
@@ -94,6 +95,16 @@ def equity_at_or_before(points: list[WeekPointLike], iso_date: str) -> float | N
         else:
             break
     return equity
+
+
+def point_at_or_before(points: list[WeekPointLike], iso_date: str) -> WeekPointLike | None:
+    selected: WeekPointLike | None = None
+    for point in points:
+        if point.iso_date <= iso_date:
+            selected = point
+        else:
+            break
+    return selected
 
 
 def rebased_equity(values: list[float], anchor_index: int) -> list[float]:
@@ -448,6 +459,24 @@ def market_label(universe: Universe, market_id: str) -> str:
     return f"{ticker} — {name}" if ticker != market_id else name
 
 
+def _weight_change_1y(
+    current: float,
+    *,
+    point_1y_ago: WeekPointLike | None,
+    market_id: str,
+) -> float | None:
+    if point_1y_ago is None:
+        return None
+    past = (
+        point_1y_ago.cash_weight
+        if market_id == "__cash__"
+        else point_1y_ago.effective_weights.get(market_id, 0.0)
+    )
+    if current <= 1e-6 and past <= 1e-6:
+        return None
+    return current - past
+
+
 def allocation_rows(
     universe: Universe,
     point: WeekPointLike,
@@ -457,6 +486,7 @@ def allocation_rows(
     as_of: date,
     ie_weights_by_market_id: dict[str, float] | None = None,
     ie_icons_by_market_id: dict[str, str] | None = None,
+    point_1y_ago: WeekPointLike | None = None,
 ) -> list[AllocationRow]:
     spark_dir.mkdir(parents=True, exist_ok=True)
     ie_weights = ie_weights_by_market_id or {}
@@ -481,6 +511,11 @@ def allocation_rows(
                 return_1y=total_return_from_prices(prices),
                 ie_weight_pct=ie_weights.get(market_id),
                 icon_path=ie_icons.get(market_id, ""),
+                weight_change_1y=_weight_change_1y(
+                    weight,
+                    point_1y_ago=point_1y_ago,
+                    market_id=market_id,
+                ),
             )
         )
     if point.cash_weight > 1e-6:
@@ -491,6 +526,11 @@ def allocation_rows(
                 weight_pct=point.cash_weight,
                 spark_path="",
                 return_1y=None,
+                weight_change_1y=_weight_change_1y(
+                    point.cash_weight,
+                    point_1y_ago=point_1y_ago,
+                    market_id="__cash__",
+                ),
             )
         )
     return rows
