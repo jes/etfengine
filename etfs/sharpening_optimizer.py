@@ -500,6 +500,7 @@ def optimize_window(
     if not tickers or len(dates) < 2:
         return {}
     returns, _mask, rf = build_window_matrices(tickers, dates, universe)
+    rf = np.zeros_like(rf)
 
     sel_g, score_g = forward_greedy_select(
         tickers,

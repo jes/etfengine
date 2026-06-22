@@ -16,7 +16,8 @@ Under a vol **cap**, the optimiser chooses how much of the vol budget to use and
 allocate it across ETFs. A low-vol mix may leave cash un invested; a high-return mix fills
 the vol budget without exceeding it.
 
-Cash earns the risk-free rate (US fed funds weekly series from Yahoo).
+Cash earns **0%** on InvestEngine. The optimiser and weekly simulation treat uninvested
+weight as dead cash.
 
 ## Ongoing fund charges (OCF/TER)
 

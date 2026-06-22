@@ -366,6 +366,8 @@ def build_index_html(
             )
         lines.append("</table>")
 
+    cash_methodology = "Uninvested cash earns 0% (InvestEngine ISA cash balance)."
+
     lines.extend(
         [
             "<p><a href=\"/builds/\">Previous builds</a></p>",
@@ -374,7 +376,7 @@ def build_index_html(
             "Each rebalance maximises mean annualised return over a 12-month lookback, "
             "subject to a 25% annualised volatility cap. Weights are EWMA-smoothed (span 6), "
             "floored at 5%, vol-scaled, then simulated weekly with a 5% drift band and "
-            "bid–ask spread drag. Uninvested cash earns the US fed funds rate.</p>",
+            f"bid–ask spread drag. {cash_methodology}</p>",
             "<p>Benchmark: VWRP (FTSE All-World accumulating). Strategy and benchmark "
             "curves are rebased to equity = 1.0 at the tracking start date. "
             f"Alpha, beta, and residual vol are from an OLS regression of weekly strategy "

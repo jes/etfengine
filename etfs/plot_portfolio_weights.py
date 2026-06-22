@@ -67,11 +67,6 @@ def main() -> int:
         default="any",
         help="Dividend policy filter (default: any — acc and dist for IE ISA)",
     )
-    parser.add_argument(
-        "--no-cash-rf",
-        action="store_true",
-        help="Uninvested cash earns 0%% instead of the risk-free series",
-    )
     parser.add_argument("--estimate-only", action="store_true")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--weights-csv", type=Path, default=DEFAULT_WEIGHTS_CSV)
@@ -134,7 +129,6 @@ def main() -> int:
     backtest_start = (
         date.fromisoformat(end) - timedelta(days=int(round(args.backtest_years * 365.25)))
     ).isoformat()
-    cash_earns_rf = not args.no_cash_rf
     max_holdings = args.max_holdings
     if args.min_weight > 0:
         max_holdings = min(max_holdings, max(1, int(1.0 / args.min_weight)))
@@ -159,7 +153,6 @@ def main() -> int:
         ewma_span=ewma_span,
         rebalance_frequency=args.rebalance_frequency,
         drift_band=args.drift_band,
-        cash_earns_rf=cash_earns_rf,
     )
     sched_s = time.perf_counter() - t1
     print(

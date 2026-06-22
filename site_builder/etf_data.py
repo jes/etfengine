@@ -185,18 +185,12 @@ def _portfolio_weekly_returns(
     weights: dict[str, float],
     universe: Universe,
     history_dates: list[str],
-    *,
-    cash_earns_rf: bool = True,
 ) -> list[float]:
     returns: list[float] = []
     for iso_date in history_dates:
-        invested = sum(weights.values())
-        cash = max(0.0, 1.0 - invested)
         gross = 0.0
         for market_id, weight in weights.items():
             gross += weight * universe.assets[market_id].returns_by_date.get(iso_date, 0.0)
-        if cash_earns_rf and cash > 1e-12:
-            gross += cash * universe.assets[RISK_FREE_ID].returns_by_date.get(iso_date, 0.0)
         returns.append(gross)
     return returns
 

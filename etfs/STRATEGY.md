@@ -168,7 +168,7 @@ vol-scaled, then simulated weekly with drift-band logic until the next rebalance
 5. Weekly simulation
    └─ 5% relative drift band vs prior effective weights
    └─ bid–ask spread drag on trades (half spread on buy and sell)
-   └─ uninvested cash earns US 30-day fed funds weekly return
+   └─ uninvested cash earns 0% (InvestEngine ISA)
 ```
 
 ### Rebalance calendar
@@ -189,8 +189,7 @@ the latest rebalance row **strictly before** each week (`target_weights_for_date
 (weekly returns × 52).
 
 **Constraint:** portfolio volatility (annualised, weekly returns, ddof=1) ≤ `target_vol`
-(25%). Cash in the optimiser earns the risk-free series; uninvested weight `(1 − sum(w))`
-contributes `cash × rf` to portfolio returns.
+(25%). Uninvested weight `(1 − sum(w))` contributes nothing to portfolio returns.
 
 Vol is a **cap**, not a leverage target.
 
@@ -265,7 +264,7 @@ On each rebalance row (`scale_row_to_vol_target`), using the same 12-month lookb
 at that rebalance date:
 
 1. Floor sub-5% weights.
-2. Estimate portfolio vol from weekly returns (cash earns RF in vol calc).
+2. Estimate portfolio vol from weekly returns (uninvested cash earns 0%).
 3. Scale all weights by `target_vol / realised_vol`, capped so total ≤ 1.
 4. Re-apply 5% floor; repeat if the holdings set changes.
 
@@ -310,7 +309,7 @@ quotes.
 | Bad tick filter | \|daily r\| > 20% | `--max-abs-daily-return 0.20` | Excludes asset for window |
 | Drift band | 5% relative | `--drift-band 0.05` | |
 | Dividend filter | **any** | `--dividends` | Default: any |
-| Cash return | risk-free | default | omit `--no-cash-rf` |
+| Cash return | **0%** (IE ISA) | — | Uninvested cash earns nothing |
 | Optimiser seed | 1337 | — | `OPTIMIZER_SEED` |
 | Random subset trials | 8 | — | `RANDOM_SET_TRIALS` |
 | Stats min history | 500 weeks | — | `market_stats.py` default |
@@ -324,10 +323,10 @@ Monthly, EWMA-6, IE ISA universe (defaults), hold period **2016-06-24 .. 2026-06
 
 | | Mean ann. | Vol ann. | Sharpe | CAGR |
 |---|---|---|---|---|
-| **ETF ISA (monthly)** | 20.87% | 26.51% | **0.80** | **18.90%** |
-| **VWRP benchmark** | 8.20% | 11.88% | 0.72 | 7.77% |
+| **ETF ISA (monthly)** | 21.64% | 27.45% | **0.80** | **19.49%** |
+| **VWRP benchmark** | 8.46% | 11.91% | 0.74 | 8.04% |
 
-Invested weight: mean 98.0%, median 100.0%, weeks with cash > 1%: 158.
+Invested weight: mean 97.3%, median 100.0%, weeks with cash > 1%: 160.
 
 **Benchmark caveat:** VWRP listed mid-2019. `benchmark_weekly()` uses the **risk-free
 weekly return** for benchmark weeks before VWRP's first price date. The printed VWRP stats
@@ -378,7 +377,7 @@ After reproduction, expect approximately:
 | Loaded allocatable ETFs | ~390 |
 | Monthly optimiser steps | ~133 |
 | Trade weeks in backtest | ~522 |
-| Strategy CAGR (Jun 2026 data) | ~19% (±1% if prices refreshed) |
+| Strategy CAGR (Jun 2026 data) | ~19.5% (±1% if prices refreshed) |
 | Strategy Sharpe | ~0.8 |
 
 If results diverge, check in order:

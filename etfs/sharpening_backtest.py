@@ -163,7 +163,6 @@ def build_schedule_and_run(
     ewma_span: int,
     rebalance_frequency: str,
     drift_band: float,
-    cash_earns_rf: bool,
 ) -> tuple[list[str], list[WeekPoint], tuple[float, float, float, float]]:
     schedule_start = window_start_from_end(backtest_start, months=lookback_months)
     end_dates, raw_rows = build_etf_weight_schedule(
@@ -192,7 +191,6 @@ def build_schedule_and_run(
         lookback_months=lookback_months,
         target_vol=target_vol,
         min_weight=min_weight,
-        cash_earns_rf=cash_earns_rf,
     )
     trade_dates = [
         d
@@ -205,7 +203,6 @@ def build_schedule_and_run(
         end_dates,
         smoothed_rows,
         drift_band=drift_band,
-        cash_earns_rf=cash_earns_rf,
     )
     trade_dates = [p.iso_date for p in points]
     rf_returns = [
@@ -267,19 +264,12 @@ def portfolio_vol_ann(
     weights: dict[str, float],
     universe: Universe,
     dates: list[str],
-    *,
-    cash_earns_rf: bool,
 ) -> float:
     if len(dates) < 2:
         return float("nan")
     weekly = np.array(
         [
-            portfolio_weekly_return(
-                weights,
-                universe,
-                iso_date,
-                cash_earns_rf=cash_earns_rf,
-            )
+            portfolio_weekly_return(weights, universe, iso_date)
             for iso_date in dates
         ],
         dtype=float,
@@ -307,7 +297,6 @@ def scale_row_to_vol_target(
     lookback_months: int,
     target_vol: float,
     min_weight: float,
-    cash_earns_rf: bool,
 ) -> dict[str, float]:
     scaled = floor_capped_weights(weights, min_weight=min_weight)
     if not scaled or target_vol <= 0:
@@ -316,12 +305,7 @@ def scale_row_to_vol_target(
     start_date = window_start_from_end(end_date, months=lookback_months)
     dates = [d for d in universe.weekly_dates if start_date <= d <= end_date]
     for _ in range(len(scaled) + 1):
-        vol = portfolio_vol_ann(
-            scaled,
-            universe,
-            dates,
-            cash_earns_rf=cash_earns_rf,
-        )
+        vol = portfolio_vol_ann(scaled, universe, dates)
         total = sum(scaled.values())
         if not vol or not math.isfinite(vol) or total <= 1e-12:
             return scaled
@@ -347,7 +331,6 @@ def scale_weight_rows_to_vol_target(
     lookback_months: int,
     target_vol: float,
     min_weight: float,
-    cash_earns_rf: bool,
 ) -> list[dict[str, float]]:
     return [
         scale_row_to_vol_target(
@@ -357,7 +340,6 @@ def scale_weight_rows_to_vol_target(
             lookback_months=lookback_months,
             target_vol=target_vol,
             min_weight=min_weight,
-            cash_earns_rf=cash_earns_rf,
         )
         for end_date, row in zip(end_dates, weight_rows)
     ]
@@ -367,18 +349,11 @@ def portfolio_weekly_return(
     weights: dict[str, float],
     universe: Universe,
     iso_date: str,
-    *,
-    cash_earns_rf: bool,
 ) -> float:
-    invested = sum(weights.values())
-    cash = max(0.0, 1.0 - invested)
     gross = 0.0
     for market_id, weight in weights.items():
         asset = universe.assets[market_id]
         gross += weight * asset.returns_by_date.get(iso_date, 0.0)
-    if cash_earns_rf and cash > 1e-12:
-        rf = universe.assets[RISK_FREE_ID].returns_by_date.get(iso_date, 0.0)
-        gross += cash * rf
     return gross
 
 
@@ -389,7 +364,6 @@ def run_weekly_backtest(
     smoothed_rows: list[dict[str, float]],
     *,
     drift_band: float,
-    cash_earns_rf: bool,
 ) -> tuple[list[WeekPoint], float]:
     prev_effective: dict[str, float] = {}
     equity = 1.0
@@ -426,12 +400,7 @@ def run_weekly_backtest(
             effective,
             universe.spread_fraction,
         )
-        gross = portfolio_weekly_return(
-            effective,
-            universe,
-            iso_date,
-            cash_earns_rf=cash_earns_rf,
-        )
+        gross = portfolio_weekly_return(effective, universe, iso_date)
         net_weekly = return_after_spread_drag(gross, spread_drag)
         equity *= 1.0 + net_weekly
         weekly_return = 0.0 if start_equity <= 0 else (equity / start_equity) - 1.0
@@ -805,7 +774,6 @@ def run_etf_backtest(
     max_abs_daily_return: float = 0.20,
     drift_band: float = 0.05,
     rebalance_frequency: str = "monthly",
-    cash_earns_rf: bool = True,
 ) -> BacktestResult:
     ewma_span = (
         ewma_span
@@ -836,7 +804,6 @@ def run_etf_backtest(
         ewma_span=ewma_span,
         rebalance_frequency=rebalance_frequency,
         drift_band=drift_band,
-        cash_earns_rf=cash_earns_rf,
     )
     rf_returns = [
         universe.assets[RISK_FREE_ID].returns_by_date[d] for d in trade_dates
@@ -869,7 +836,6 @@ def run_vol_cap_sensitivity_backtests(
     max_abs_daily_return: float = 0.20,
     drift_band: float = 0.05,
     rebalance_frequency: str = "monthly",
-    cash_earns_rf: bool = True,
 ) -> tuple[list[str], list[VolCapBacktestCurve]]:
     """Run walk-forward backtests at multiple vol caps (separate optimiser per cap)."""
     ewma_span = (
@@ -905,7 +871,6 @@ def run_vol_cap_sensitivity_backtests(
             ewma_span=ewma_span,
             rebalance_frequency=rebalance_frequency,
             drift_band=drift_band,
-            cash_earns_rf=cash_earns_rf,
         )
         if not trade_dates:
             trade_dates = td
@@ -984,11 +949,6 @@ def main() -> int:
         default="any",
         help="Dividend policy filter (default: any — acc and dist for IE ISA)",
     )
-    parser.add_argument(
-        "--no-cash-rf",
-        action="store_true",
-        help="Uninvested cash earns 0%% instead of the risk-free series",
-    )
     parser.add_argument("--estimate-only", action="store_true")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--diagnostics", type=Path, default=DEFAULT_DIAGNOSTICS)
@@ -1039,7 +999,6 @@ def main() -> int:
     if args.estimate_only:
         return 0
 
-    cash_earns_rf = not args.no_cash_rf
     print(
         f"Building {args.rebalance_frequency} weight schedule (ETF GIA universe)…",
         flush=True,
@@ -1058,7 +1017,6 @@ def main() -> int:
         max_abs_daily_return=args.max_abs_daily_return,
         drift_band=args.drift_band,
         rebalance_frequency=args.rebalance_frequency,
-        cash_earns_rf=cash_earns_rf,
     )
     sched_s = time.perf_counter() - t1
     print(
