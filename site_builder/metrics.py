@@ -159,6 +159,18 @@ def drawdown_series(equity_curve: list[float]) -> list[float]:
     return series
 
 
+def max_drawdown(equity_curve: list[float]) -> float:
+    if not equity_curve:
+        return float("nan")
+    peak = equity_curve[0]
+    worst = 0.0
+    for value in equity_curve:
+        peak = max(peak, value)
+        if peak > 0:
+            worst = min(worst, value / peak - 1.0)
+    return worst
+
+
 def fraction_same_or_worse(value: float, distribution: list[float]) -> float | None:
     if not distribution:
         return None

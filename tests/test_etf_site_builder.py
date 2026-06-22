@@ -18,9 +18,20 @@ from site_builder.etf_data import (
     summary_stats,
     tracking_anchor_index,
 )
-from site_builder.metrics import BenchmarkRegressionStats, benchmark_regression_stats, days_since_ath_series
+from site_builder.metrics import BenchmarkRegressionStats, benchmark_regression_stats, days_since_ath_series, max_drawdown
 from site_builder.etf_html import build_index_html
+from site_builder.etf_plots import _format_vol_cap_label, plot_etf_vol_cap_equity
 from strategy.data import Asset, Universe
+
+
+@dataclass(frozen=True)
+class FakeVolCapCurve:
+    vol_cap: float
+    equity: list[float]
+    sharpe: float
+    cagr: float
+    vol_ann: float
+    max_drawdown: float
 
 
 @dataclass(frozen=True)
@@ -54,6 +65,57 @@ def _fake_universe() -> Universe:
 
 
 class EtfSiteBuilderTests(unittest.TestCase):
+    def test_max_drawdown(self) -> None:
+        self.assertAlmostEqual(max_drawdown([1.0, 1.2, 0.9, 1.1]), -0.25)
+        self.assertTrue(math.isnan(max_drawdown([])))
+
+    def test_format_vol_cap_label(self) -> None:
+        curve = FakeVolCapCurve(
+            vol_cap=0.25,
+            equity=[1.0],
+            sharpe=1.23,
+            cagr=0.118,
+            vol_ann=0.241,
+            max_drawdown=-0.182,
+        )
+        label = _format_vol_cap_label(curve)
+        self.assertIn("25% cap", label)
+        self.assertIn("Sharpe 1.23", label)
+        self.assertIn("CAGR 11.8%", label)
+        self.assertIn("vol 24.1%", label)
+        self.assertIn("max DD -18.2%", label)
+
+    def test_plot_etf_vol_cap_equity_writes_png(self) -> None:
+        curves = [
+            FakeVolCapCurve(
+                vol_cap=0.10,
+                equity=[1.0, 1.05, 1.08],
+                sharpe=0.8,
+                cagr=0.05,
+                vol_ann=0.10,
+                max_drawdown=-0.05,
+            ),
+            FakeVolCapCurve(
+                vol_cap=0.25,
+                equity=[1.0, 1.10, 1.15],
+                sharpe=1.1,
+                cagr=0.09,
+                vol_ann=0.24,
+                max_drawdown=-0.12,
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "equity_vol_caps.png"
+            plot_etf_vol_cap_equity(
+                trade_dates=["2026-01-01", "2026-02-01", "2026-03-01"],
+                curves=curves,
+                tracking_start="2026-01-01",
+                highlight_vol_cap=0.25,
+                output=output,
+            )
+            self.assertTrue(output.is_file())
+            self.assertGreater(output.stat().st_size, 0)
+
     def test_tracking_anchor_index(self) -> None:
         dates = ["2025-01-01", "2026-01-01", "2026-06-01"]
         self.assertEqual(tracking_anchor_index(dates, "2026-06-20"), 2)
@@ -216,6 +278,7 @@ class EtfSiteBuilderTests(unittest.TestCase):
             self.assertIn("tracking from 2026-06-20", text)
             self.assertIn("Days since ATH", text)
             self.assertIn("Beta vs VWRP", text)
+            self.assertIn("equity_vol_caps.png", text)
             self.assertIn("Alpha vs VWRP", text)
             self.assertNotIn("VWRP CAGR", text)
 

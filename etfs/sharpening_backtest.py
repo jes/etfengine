@@ -94,9 +94,44 @@ class EquityCurve:
     stats: tuple[float, float, float, float]  # mean, vol, sharpe, cagr
 
 
+@dataclass(frozen=True)
+class VolCapBacktestCurve:
+    vol_cap: float
+    equity: list[float]
+    mean_ann: float
+    vol_ann: float
+    sharpe: float
+    cagr: float
+    max_drawdown: float
+
+
 def format_stats_label(label: str, stats: tuple[float, float, float, float]) -> str:
     _, vol, sharpe, cagr = stats
     return f"{label}  CAGR {cagr * 100:.1f}%  vol {vol * 100:.1f}%  Sharpe {sharpe:.2f}"
+
+
+def format_vol_cap_label(curve: VolCapBacktestCurve) -> str:
+    cap_pct = curve.vol_cap * 100.0
+    cap_label = f"{cap_pct:.0f}%" if abs(cap_pct - round(cap_pct)) < 1e-9 else f"{cap_pct:.1f}%"
+    return (
+        f"{cap_label} cap  "
+        f"Sharpe {curve.sharpe:.2f}  "
+        f"CAGR {curve.cagr * 100:.1f}%  "
+        f"vol {curve.vol_ann * 100:.1f}%  "
+        f"max DD {curve.max_drawdown * 100:.1f}%"
+    )
+
+
+def max_drawdown_from_equity(equity: list[float]) -> float:
+    if not equity:
+        return float("nan")
+    peak = equity[0]
+    worst = 0.0
+    for value in equity:
+        peak = max(peak, value)
+        if peak > 0:
+            worst = min(worst, value / peak - 1.0)
+    return worst
 
 
 def print_stats_table(rows: list[tuple[str, tuple[float, float, float, float]]]) -> None:
@@ -818,6 +853,81 @@ def run_etf_backtest(
         bench_equity=bench_equity,
         bench_returns=bench_returns,
     )
+
+
+def run_vol_cap_sensitivity_backtests(
+    universe: Universe,
+    vol_caps: list[float] | tuple[float, ...],
+    *,
+    backtest_years: float = 10.0,
+    max_holdings: int = 20,
+    lookback_months: int = 12,
+    ewma_span: int | None = None,
+    min_weight: float = DEFAULT_MIN_WEIGHT,
+    min_coverage: float = 0.95,
+    listing_years: float = 1.0,
+    max_abs_daily_return: float = 0.20,
+    drift_band: float = 0.05,
+    rebalance_frequency: str = "monthly",
+    cash_earns_rf: bool = True,
+) -> tuple[list[str], list[VolCapBacktestCurve]]:
+    """Run walk-forward backtests at multiple vol caps (separate optimiser per cap)."""
+    ewma_span = (
+        ewma_span
+        if ewma_span is not None
+        else default_ewma_span(rebalance_frequency)
+    )
+    end = universe.weekly_dates[-1]
+    backtest_start = (
+        date.fromisoformat(end) - timedelta(days=int(round(backtest_years * 365.25)))
+    ).isoformat()
+    all_tickers = allocatable_assets(universe)
+    capped_holdings = max_holdings
+    if min_weight > 0:
+        capped_holdings = min(capped_holdings, max(1, int(1.0 / min_weight)))
+
+    trade_dates: list[str] = []
+    curves: list[VolCapBacktestCurve] = []
+    for vol_cap in vol_caps:
+        print(f"  vol cap {vol_cap * 100:.0f}%…", flush=True)
+        td, points, stats = build_schedule_and_run(
+            universe,
+            all_tickers,
+            backtest_start=backtest_start,
+            end=end,
+            lookback_months=lookback_months,
+            target_vol=vol_cap,
+            max_holdings=capped_holdings,
+            min_weight=min_weight,
+            min_coverage=min_coverage,
+            listing_years=listing_years,
+            max_abs_daily_return=max_abs_daily_return,
+            ewma_span=ewma_span,
+            rebalance_frequency=rebalance_frequency,
+            drift_band=drift_band,
+            cash_earns_rf=cash_earns_rf,
+        )
+        if not trade_dates:
+            trade_dates = td
+        elif td != trade_dates:
+            raise ValueError(
+                f"trade date mismatch at vol cap {vol_cap}: "
+                f"{len(trade_dates)} vs {len(td)} weeks"
+            )
+        equity = [point.equity for point in points]
+        mean_ann, vol_ann, sharpe, cagr = stats
+        curves.append(
+            VolCapBacktestCurve(
+                vol_cap=vol_cap,
+                equity=equity,
+                mean_ann=mean_ann,
+                vol_ann=vol_ann,
+                sharpe=sharpe,
+                cagr=cagr,
+                max_drawdown=max_drawdown_from_equity(equity),
+            )
+        )
+    return trade_dates, curves
 
 
 def estimate_runtime_steps(

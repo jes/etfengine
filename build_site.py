@@ -19,9 +19,12 @@ if str(ETFS_DIR) not in sys.path:
 
 import config as etf_config  # noqa: E402
 from sharpening_backtest import (  # noqa: E402
+    VolCapBacktestCurve,
     load_backtest_universe,
+    max_drawdown_from_equity,
     plot_portfolio_weights,
     run_etf_backtest,
+    run_vol_cap_sensitivity_backtests,
     write_diagnostics,
 )
 from site_builder.investengine_portfolio import (  # noqa: E402
@@ -50,6 +53,7 @@ from site_builder.etf_plots import (  # noqa: E402
     plot_etf_drawdown,
     plot_etf_equity,
     plot_etf_rolling_metric_chart,
+    plot_etf_vol_cap_equity,
     plot_invested_weight,
     write_sparklines,
 )
@@ -121,6 +125,44 @@ def build_snapshot(
     )
     write_diagnostics(diagnostics_path, result.points)
 
+    print("Running vol-cap sensitivity backtests…", flush=True)
+    vol_caps = list(etf_config.VOL_CAP_SENSITIVITY)
+    vol_cap_trade_dates = result.trade_dates
+    vol_cap_curves = []
+    if etf_config.TARGET_VOL in vol_caps:
+        strat_equity = [point.equity for point in result.points]
+        mean_ann, vol_ann, sharpe, cagr = result.strat_stats
+        vol_cap_curves.append(
+            VolCapBacktestCurve(
+                vol_cap=etf_config.TARGET_VOL,
+                equity=strat_equity,
+                mean_ann=mean_ann,
+                vol_ann=vol_ann,
+                sharpe=sharpe,
+                cagr=cagr,
+                max_drawdown=max_drawdown_from_equity(strat_equity),
+            )
+        )
+        vol_caps = [cap for cap in vol_caps if cap != etf_config.TARGET_VOL]
+    if vol_caps:
+        extra_trade_dates, extra_curves = run_vol_cap_sensitivity_backtests(
+            universe,
+            vol_caps,
+            backtest_years=etf_config.BACKTEST_YEARS,
+            max_holdings=etf_config.MAX_HOLDINGS,
+            lookback_months=etf_config.LOOKBACK_MONTHS,
+            ewma_span=etf_config.EWMA_SPAN,
+            min_weight=etf_config.MIN_WEIGHT,
+            rebalance_frequency=etf_config.REBALANCE_FREQUENCY,
+            drift_band=etf_config.DRIFT_BAND,
+        )
+        if extra_trade_dates != vol_cap_trade_dates:
+            raise ValueError(
+                "vol-cap sensitivity trade dates differ from primary backtest"
+            )
+        vol_cap_curves.extend(extra_curves)
+    vol_cap_curves.sort(key=lambda curve: curve.vol_cap)
+
     latest = result.points[-1]
     as_of = date.fromisoformat(latest.iso_date)
     bench_label = etf_config.BENCHMARK_LABEL
@@ -138,6 +180,13 @@ def build_snapshot(
         bench_label=bench_label,
         tracking_start=tracking_start,
         output=snapshot_dir / "equity.png",
+    )
+    plot_etf_vol_cap_equity(
+        trade_dates=vol_cap_trade_dates,
+        curves=vol_cap_curves,
+        tracking_start=tracking_start,
+        highlight_vol_cap=etf_config.TARGET_VOL,
+        output=snapshot_dir / "equity_vol_caps.png",
     )
     plot_etf_drawdown(
         trade_dates=result.trade_dates,

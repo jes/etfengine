@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from typing import Protocol
 
+import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter, NullFormatter, PercentFormatter
 
 from site_builder.metrics import (
@@ -31,6 +33,27 @@ from site_builder.plots import (
     plot_sparkline,
     plot_weekly_return_histogram,
 )
+
+
+class VolCapCurveLike(Protocol):
+    vol_cap: float
+    equity: list[float]
+    sharpe: float
+    cagr: float
+    vol_ann: float
+    max_drawdown: float
+
+
+def _format_vol_cap_label(curve: VolCapCurveLike) -> str:
+    cap_pct = curve.vol_cap * 100.0
+    cap_label = f"{cap_pct:.0f}%" if abs(cap_pct - round(cap_pct)) < 1e-9 else f"{cap_pct:.1f}%"
+    return (
+        f"{cap_label} cap  "
+        f"Sharpe {curve.sharpe:.2f}  "
+        f"CAGR {curve.cagr * 100:.1f}%  "
+        f"vol {curve.vol_ann * 100:.1f}%  "
+        f"max DD {curve.max_drawdown * 100:.1f}%"
+    )
 
 
 def _equity_log_tick(value: float, _position: int) -> str:
@@ -82,6 +105,66 @@ def plot_etf_equity(
     _rrd_legend(ax, loc="upper left")
     fig.autofmt_xdate()
     fig.subplots_adjust(left=0.09, right=0.98, top=0.88, bottom=0.2)
+    _save_rrd(fig, output)
+
+
+def plot_etf_vol_cap_equity(
+    *,
+    trade_dates: list[str],
+    curves: list[VolCapCurveLike],
+    tracking_start: str,
+    highlight_vol_cap: float | None = None,
+    output: Path,
+) -> None:
+    if not curves:
+        raise ValueError("no vol-cap curves to plot")
+
+    fig, ax = _rrd_subplots(1440, 720)
+    _apply_rrd_axis(ax)
+
+    anchor = tracking_anchor_index(trade_dates, tracking_start)
+    anchor_date = date.fromisoformat(trade_dates[anchor])
+    dates = [date.fromisoformat(iso_date) for iso_date in trade_dates]
+    cmap = plt.get_cmap("viridis")
+    n = len(curves)
+
+    for index, curve in enumerate(curves):
+        if len(curve.equity) != len(trade_dates):
+            raise ValueError(
+                f"plot length mismatch for vol cap {curve.vol_cap}: "
+                f"{len(trade_dates)} dates, {len(curve.equity)} equity points"
+            )
+        color = cmap(index / max(n - 1, 1))
+        highlighted = (
+            highlight_vol_cap is not None
+            and abs(curve.vol_cap - highlight_vol_cap) < 1e-9
+        )
+        _rrd_plot(
+            ax,
+            dates,
+            rebased_equity(curve.equity, anchor),
+            color=color,
+            label=_format_vol_cap_label(curve),
+            linewidth=2.5 * RRD_PIXEL if highlighted else RRD_PIXEL,
+            alpha=1.0 if highlighted else 0.9,
+            zorder=3 if highlighted else 2,
+        )
+
+    ax.axvline(
+        anchor_date,
+        color=RRD_BLACK,
+        linestyle="--",
+        linewidth=RRD_PIXEL,
+        label="Tracking start",
+    )
+    ax.set_yscale("log")
+    ax.yaxis.set_major_formatter(FuncFormatter(_equity_log_tick))
+    ax.yaxis.set_minor_formatter(NullFormatter())
+    ax.set_ylabel("Equity (log scale, rebased to 1.0 at tracking start)")
+    ax.set_title("Equity by vol cap")
+    _rrd_legend(ax, loc="upper left", fontsize=7)
+    fig.autofmt_xdate()
+    fig.subplots_adjust(left=0.09, right=0.98, top=0.88, bottom=0.22)
     _save_rrd(fig, output)
 
 

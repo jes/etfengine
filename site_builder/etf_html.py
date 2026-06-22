@@ -254,6 +254,7 @@ def build_index_html(
         [
             "</div>",
             "<p><img class=\"chart\" src=\"equity.png\" alt=\"Equity curve\"></p>",
+            "<p><img class=\"chart\" src=\"equity_vol_caps.png\" alt=\"Equity by vol cap\"></p>",
             "<p><img class=\"chart\" src=\"drawdown.png\" alt=\"Drawdown\"></p>",
             "<p><img class=\"chart\" src=\"weights.png\" alt=\"Portfolio weights\"></p>",
             "<p><img class=\"chart\" src=\"invested.png\" alt=\"Invested weight\"></p>",
