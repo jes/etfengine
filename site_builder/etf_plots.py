@@ -115,6 +115,44 @@ def plot_etf_equity(
     _save_rrd(fig, output)
 
 
+def plot_etf_equity_since_tracking(
+    *,
+    trade_dates: list[str],
+    strat_equity: list[float],
+    bench_equity: list[float],
+    bench_label: str,
+    tracking_start: str,
+    output: Path,
+) -> None:
+    anchor = tracking_anchor_index(trade_dates, tracking_start)
+    if anchor >= len(trade_dates):
+        raise ValueError(f"tracking start {tracking_start!r} is after last trade date")
+
+    dates = [date.fromisoformat(iso_date) for iso_date in trade_dates[anchor:]]
+    strat_values = rebased_equity(strat_equity, anchor)[anchor:]
+    bench_values = rebased_equity(bench_equity, anchor)[anchor:]
+
+    fig, ax = _rrd_subplots(1440, 600)
+    _apply_rrd_axis(ax)
+
+    _rrd_plot(ax, dates, strat_values, color=RRD_BLUE, label="Strategy")
+    _rrd_plot(
+        ax,
+        dates,
+        bench_values,
+        color=RRD_BLACK,
+        alpha=0.85,
+        label=bench_label,
+    )
+    ax.set_ylim(bottom=0)
+    ax.set_ylabel("Equity (rebased to 1.0 at tracking start)")
+    ax.set_title("Equity since tracking start")
+    _rrd_legend(ax, loc="upper left")
+    fig.autofmt_xdate()
+    fig.subplots_adjust(left=0.09, right=0.98, top=0.88, bottom=0.2)
+    _save_rrd(fig, output)
+
+
 def plot_etf_vol_cap_equity(
     *,
     trade_dates: list[str],

@@ -54,6 +54,7 @@ from site_builder.etf_plots import (  # noqa: E402
     plot_backtest_return_histogram,
     plot_etf_drawdown,
     plot_etf_equity,
+    plot_etf_equity_since_tracking,
     plot_etf_rolling_metric_chart,
     plot_etf_vol_cap_equity,
     plot_invested_weight,
@@ -183,6 +184,14 @@ def build_snapshot(
         bench_label=bench_label,
         tracking_start=tracking_start,
         output=snapshot_dir / "equity.png",
+    )
+    plot_etf_equity_since_tracking(
+        trade_dates=result.trade_dates,
+        strat_equity=[point.equity for point in result.points],
+        bench_equity=result.bench_equity,
+        bench_label=bench_label,
+        tracking_start=tracking_start,
+        output=snapshot_dir / "equity_tracking.png",
     )
     plot_etf_vol_cap_equity(
         trade_dates=vol_cap_trade_dates,

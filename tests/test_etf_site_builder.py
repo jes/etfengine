@@ -24,7 +24,11 @@ from site_builder.etf_data import (
 )
 from site_builder.metrics import BenchmarkRegressionStats, benchmark_regression_stats, days_since_ath_series, max_drawdown
 from site_builder.etf_html import build_index_html
-from site_builder.etf_plots import _format_vol_cap_label, plot_etf_vol_cap_equity
+from site_builder.etf_plots import (
+    _format_vol_cap_label,
+    plot_etf_equity_since_tracking,
+    plot_etf_vol_cap_equity,
+)
 from strategy.data import Asset, Universe
 
 
@@ -118,6 +122,20 @@ class EtfSiteBuilderTests(unittest.TestCase):
                 curves=curves,
                 tracking_start="2026-01-01",
                 highlight_vol_cap=0.25,
+                output=output,
+            )
+            self.assertTrue(output.is_file())
+            self.assertGreater(output.stat().st_size, 0)
+
+    def test_plot_etf_equity_since_tracking_writes_png(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "equity_tracking.png"
+            plot_etf_equity_since_tracking(
+                trade_dates=["2026-01-01", "2026-02-01", "2026-03-01", "2026-06-01"],
+                strat_equity=[1.0, 1.05, 1.08, 1.12],
+                bench_equity=[1.0, 1.02, 1.03, 1.04],
+                bench_label="VWRP",
+                tracking_start="2026-02-01",
                 output=output,
             )
             self.assertTrue(output.is_file())
@@ -289,6 +307,7 @@ class EtfSiteBuilderTests(unittest.TestCase):
             self.assertIn("Days since ATH", text)
             self.assertIn("Beta vs VWRP", text)
             self.assertIn("equity_vol_caps.png", text)
+            self.assertIn("equity_tracking.png", text)
             self.assertIn("Alpha vs VWRP", text)
             self.assertIn("Regime votes", text)
             self.assertIn('class="chart" src="regime_returns.png"', text)
