@@ -34,6 +34,13 @@ from strategy.costs import (
 )
 from strategy.data import Universe, allocatable_assets, load_universe
 from strategy.optimizer import build_weekly_end_dates, window_start_from_end
+from strategy.regime import (
+    REGIME_MONTHS,
+    in_regime_cash,
+    min_regime_history,
+    regime_vote,
+    selection_weeks,
+)
 from strategy.weights import ewma_smooth_capped_weight_rows, target_weights_for_date
 
 from build_universe import (
@@ -197,18 +204,19 @@ def build_schedule_and_run(
         for d in universe.weekly_dates
         if d >= backtest_start and end_dates and d > end_dates[0]
     ]
-    points, _ = run_weekly_backtest(
+    shadow_points, _ = run_weekly_backtest(
         universe,
         trade_dates,
         end_dates,
         smoothed_rows,
         drift_band=drift_band,
     )
-    trade_dates = [p.iso_date for p in points]
+    trade_dates = [point.iso_date for point in shadow_points]
     rf_returns = [
         universe.assets[RISK_FREE_ID].returns_by_date[d] for d in trade_dates
     ]
-    stats = stats_from_weekly([p.weekly_return for p in points], rf_returns)
+    points = apply_regime_cash_gate(shadow_points, rf_returns)
+    stats = stats_from_weekly([point.weekly_return for point in points], rf_returns)
     return trade_dates, points, stats
 
 
@@ -224,6 +232,9 @@ class WeekPoint:
     holdings: str
     effective_weights: dict[str, float]
     target_weights: dict[str, float]
+    shadow_weekly_return: float = 0.0
+    regime_votes: tuple[tuple[int, str], ...] = ()
+    in_regime_cash: bool = False
 
 
 def load_allowlist_ids(path: Path) -> set[str]:
@@ -421,6 +432,7 @@ def run_weekly_backtest(
                 holdings=holdings,
                 effective_weights=dict(effective),
                 target_weights=dict(target),
+                shadow_weekly_return=weekly_return,
             )
         )
         prev_effective = dict(effective)
@@ -485,6 +497,71 @@ def stats_from_weekly(
     years = len(port) / 52
     cagr = equity ** (1.0 / years) - 1.0 if years > 0 and equity > 0 else float("nan")
     return mean_ann, vol_ann, sharpe, cagr
+
+
+def apply_regime_cash_gate(
+    shadow_points: list[WeekPoint],
+    rf_returns: list[float],
+    *,
+    regime_months: tuple[int, ...] = REGIME_MONTHS,
+) -> list[WeekPoint]:
+    """Apply regime cash filter: cash when shadow lost money over all regime windows."""
+    if not shadow_points:
+        return []
+    regime_weeks = selection_weeks(regime_months)
+    min_history = min_regime_history(regime_months)
+    shadow_returns: list[float] = []
+    real_points: list[WeekPoint] = []
+    equity = 1.0
+
+    for index, shadow in enumerate(shadow_points):
+        shadow_returns.append(shadow.weekly_return)
+        votes: dict[int, str] = {}
+        gated = False
+        if len(shadow_returns) >= min_history:
+            _, votes = regime_vote(
+                shadow_returns,
+                regime_months,
+                regime_weeks,
+            )
+            gated = in_regime_cash(votes, regime_months)
+
+        start_equity = equity
+        if gated:
+            net_weekly = rf_returns[index]
+            spread_drag = 0.0
+            invested = 0.0
+            cash = 1.0
+            holdings = ""
+            effective_weights: dict[str, float] = {}
+        else:
+            net_weekly = shadow.net_weekly
+            spread_drag = shadow.spread_drag
+            invested = shadow.invested_weight
+            cash = shadow.cash_weight
+            holdings = shadow.holdings
+            effective_weights = shadow.effective_weights
+
+        equity *= 1.0 + net_weekly
+        weekly_return = 0.0 if start_equity <= 0 else (equity / start_equity) - 1.0
+        real_points.append(
+            WeekPoint(
+                iso_date=shadow.iso_date,
+                equity=equity,
+                weekly_return=weekly_return,
+                invested_weight=invested,
+                cash_weight=cash,
+                spread_drag=spread_drag,
+                net_weekly=net_weekly,
+                holdings=holdings,
+                effective_weights=effective_weights,
+                target_weights=shadow.target_weights,
+                shadow_weekly_return=shadow.weekly_return,
+                regime_votes=tuple(sorted(votes.items())),
+                in_regime_cash=gated,
+            )
+        )
+    return real_points
 
 
 def benchmark_weekly(

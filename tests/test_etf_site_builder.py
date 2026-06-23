@@ -9,12 +9,16 @@ from pathlib import Path
 
 from site_builder.etf_data import (
     SummaryStats,
+    RegimeReturnSeries,
     allocation_rows,
     ath_snapshot,
     drawdown_snapshot,
     period_returns,
     point_at_or_before,
     rebased_equity,
+    regime_return_series,
+    regime_unanimous_bearish_spans,
+    regime_vote_rows,
     summary_stats,
     tracking_anchor_index,
 )
@@ -43,6 +47,9 @@ class FakePoint:
     cash_weight: float
     effective_weights: dict[str, float]
     target_weights: dict[str, float]
+    shadow_weekly_return: float = 0.0
+    regime_votes: tuple[tuple[int, str], ...] = ()
+    in_regime_cash: bool = False
 
 
 def _fake_universe() -> Universe:
@@ -230,6 +237,8 @@ class EtfSiteBuilderTests(unittest.TestCase):
             0.05,
             {"ie00bk5bqt80": 0.95},
             {"ie00bk5bqt80": 1.0},
+            shadow_weekly_return=0.02,
+            regime_votes=((3, "invested"), (6, "cash"), (12, "invested")),
         )
         point_1y_ago = FakePoint(
             "2025-06-01",
@@ -266,6 +275,7 @@ class EtfSiteBuilderTests(unittest.TestCase):
                 cash_weight=0.05,
                 sharpe_1y=0.6,
                 portfolio_url="https://investengine.com/share/portfolio/example/",
+                regime_rows=[(3, 0.12, "bullish"), (6, -0.03, "bearish"), (12, 0.05, "bullish")],
             )
             text = out.read_text(encoding="utf-8")
             self.assertIn("ETF Engine", text)
@@ -280,7 +290,80 @@ class EtfSiteBuilderTests(unittest.TestCase):
             self.assertIn("Beta vs VWRP", text)
             self.assertIn("equity_vol_caps.png", text)
             self.assertIn("Alpha vs VWRP", text)
+            self.assertIn("Regime votes", text)
+            self.assertIn('class="chart" src="regime_returns.png"', text)
+            self.assertIn("3m", text)
+            self.assertIn("bearish", text)
+            self.assertIn("+12.00%", text)
+            self.assertIn("-3.00%", text)
             self.assertNotIn("VWRP CAGR", text)
+
+    def test_regime_unanimous_bearish_spans_merges_contiguous_weeks(self) -> None:
+        series = [
+            RegimeReturnSeries(
+                months=3,
+                dates=[
+                    date(2024, 1, 1),
+                    date(2024, 1, 8),
+                    date(2024, 1, 15),
+                    date(2024, 1, 22),
+                ],
+                values=[0.01, -0.02, -0.03, 0.01],
+            ),
+            RegimeReturnSeries(
+                months=6,
+                dates=[
+                    date(2024, 1, 1),
+                    date(2024, 1, 8),
+                    date(2024, 1, 15),
+                    date(2024, 1, 22),
+                ],
+                values=[0.02, -0.01, -0.04, -0.02],
+            ),
+            RegimeReturnSeries(
+                months=12,
+                dates=[
+                    date(2024, 1, 1),
+                    date(2024, 1, 8),
+                    date(2024, 1, 15),
+                    date(2024, 1, 22),
+                ],
+                values=[0.03, -0.02, -0.05, -0.01],
+            ),
+        ]
+        spans = regime_unanimous_bearish_spans(series)
+        self.assertEqual(len(spans), 1)
+        self.assertLess(spans[0][0], date(2024, 1, 8))
+        self.assertGreater(spans[0][1], date(2024, 1, 15))
+
+    def test_regime_vote_rows_uses_shadow_returns(self) -> None:
+        points = [
+            FakePoint(
+                "2025-01-01",
+                1.0,
+                0.0,
+                1.0,
+                0.0,
+                {"a": 1.0},
+                {"a": 1.0},
+                shadow_weekly_return=0.0,
+            ),
+            FakePoint(
+                "2026-06-01",
+                0.9,
+                -0.1,
+                1.0,
+                0.0,
+                {"a": 1.0},
+                {"a": 1.0},
+                shadow_weekly_return=-0.1,
+                regime_votes=((1, "cash"),),
+            ),
+        ]
+        rows = regime_vote_rows(points, regime_months=(1,))
+        self.assertIsNotNone(rows)
+        assert rows is not None
+        self.assertEqual(rows[0][2], "bearish")
 
 
 if __name__ == "__main__":

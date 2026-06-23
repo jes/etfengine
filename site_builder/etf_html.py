@@ -80,6 +80,30 @@ def _panel_tone(value: float | None) -> str:
     return "neutral"
 
 
+def _regime_panel_tone(
+    regime_rows: list[tuple[int, float | None, str]] | None,
+) -> str:
+    if not regime_rows:
+        return "neutral"
+    return "red" if all(label == "bearish" for _, _, label in regime_rows) else "green"
+
+
+def _regime_summary_html(regime_rows: list[tuple[int, float | None, str]] | None) -> str:
+    if regime_rows is None:
+        return "Not enough history"
+    bits = []
+    for months, trailing, label in regime_rows:
+        tone = _panel_tone(trailing)
+        bits.append(
+            "<span class=\"mini-stat\">"
+            f"{months}m <strong class=\"stat-pct {tone}\">"
+            f"{html.escape(_pct(trailing if trailing is not None else float('nan')))}</strong> "
+            f"{html.escape(label)}"
+            "</span>"
+        )
+    return " ".join(bits)
+
+
 def _summary_panel(label: str, value: str, *, tone: str = "neutral", detail: str = "") -> str:
     detail_html = f"<div class=\"panel-detail\">{detail}</div>" if detail else ""
     return (
@@ -139,6 +163,7 @@ def build_index_html(
     sharpe_1y: float | None,
     portfolio_url: str | None = None,
     ie_snapshot: InvestEngineSnapshot | None = None,
+    regime_rows: list[tuple[int, float | None, str]] | None = None,
 ) -> None:
     lines: list[str] = [
         "<!DOCTYPE html>",
@@ -160,6 +185,10 @@ def build_index_html(
         ".panel-value { font-size: 1.35rem; font-weight: 700; line-height: 1.2; }",
         ".panel-detail { color: #444; font-size: 0.86rem; line-height: 1.45; margin-top: 8px; }",
         ".generated { color: #666; font-size: 0.86rem; margin-top: -6px; }",
+        ".mini-stat { display: block; font-size: 0.9rem; font-weight: 400; }",
+        ".stat-pct.green { color: green; font-weight: 700; }",
+        ".stat-pct.red { color: red; font-weight: 700; }",
+        ".stat-pct.neutral { font-weight: 700; }",
         ".portfolio-link { margin: 0 0 12px; font-size: 1rem; }",
         ".source-note { color: #444; font-size: 0.92rem; line-height: 1.5; max-width: 72rem; }",
         ".source-badge { display: inline-block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; border-radius: 4px; padding: 1px 6px; margin-right: 4px; vertical-align: middle; }",
@@ -185,6 +214,11 @@ def build_index_html(
         f"<p class=\"generated\">Generated {html.escape(generated_at)} UTC · "
         f"as of {html.escape(as_of_date)} · tracking from {html.escape(tracking_start)}</p>",
         "<div class=\"summary-grid\">",
+        _summary_panel(
+            "Regime votes",
+            _regime_summary_html(regime_rows),
+            tone=_regime_panel_tone(regime_rows),
+        ),
         _summary_panel(
             "Strategy CAGR (full backtest)",
             _coloured_pct(strat_stats.cagr),
@@ -258,6 +292,7 @@ def build_index_html(
             "<p><img class=\"chart\" src=\"drawdown.png\" alt=\"Drawdown\"></p>",
             "<p><img class=\"chart\" src=\"weights.png\" alt=\"Portfolio weights\"></p>",
             "<p><img class=\"chart\" src=\"invested.png\" alt=\"Invested weight\"></p>",
+            "<p><img class=\"chart\" src=\"regime_returns.png\" alt=\"Regime trailing returns\"></p>",
             "<p><img class=\"chart\" src=\"sharpe.png\" alt=\"Sharpe ratio chart\"></p>",
             "<p><img class=\"chart\" src=\"cagr.png\" alt=\"CAGR chart\"></p>",
             "<p><img class=\"chart\" src=\"vol.png\" alt=\"Volatility chart\"></p>",
@@ -376,7 +411,9 @@ def build_index_html(
             "Each rebalance maximises mean annualised return over a 12-month lookback, "
             "subject to a 25% annualised volatility cap. Weights are EWMA-smoothed (span 6), "
             "floored at 5%, vol-scaled, then simulated weekly with a 5% drift band and "
-            f"bid–ask spread drag. {cash_methodology}</p>",
+            f"bid–ask spread drag. The strategy sits in cash only when the always-invested "
+            "shadow book lost money over all three regime windows: 3/6/12 months. "
+            f"{cash_methodology}</p>",
             "<p>Benchmark: VWRP (FTSE All-World accumulating). Strategy and benchmark "
             "curves are rebased to equity = 1.0 at the tracking start date. "
             f"Alpha, beta, and residual vol are from an OLS regression of weekly strategy "

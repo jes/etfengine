@@ -41,6 +41,8 @@ from site_builder.etf_data import (  # noqa: E402
     period_returns,
     point_at_or_before,
     rebased_equity,
+    regime_return_series,
+    regime_vote_rows,
     rolling_metric_charts,
     summary_stats,
     tracking_anchor_index,
@@ -55,6 +57,7 @@ from site_builder.etf_plots import (  # noqa: E402
     plot_etf_rolling_metric_chart,
     plot_etf_vol_cap_equity,
     plot_invested_weight,
+    plot_regime_returns,
     write_sparklines,
 )
 from site_builder.metrics import (  # noqa: E402
@@ -205,6 +208,11 @@ def build_snapshot(
         tracking_start=tracking_start,
         output=snapshot_dir / "invested.png",
     )
+    plot_regime_returns(
+        series=regime_return_series(result.points),
+        tracking_start=tracking_start,
+        output=snapshot_dir / "regime_returns.png",
+    )
 
     metric_charts = rolling_metric_charts(
         points=result.points,
@@ -300,6 +308,7 @@ def build_snapshot(
         sharpe_1y=sharpe_1y,
         portfolio_url=etf_config.INVESTENGINE_PORTFOLIO_URL,
         ie_snapshot=ie_snapshot,
+        regime_rows=regime_vote_rows(result.points),
     )
 
 

@@ -26,6 +26,12 @@ from site_builder.metrics import (
 )
 from strategy.constants import RISK_FREE_ID, WEEKS_PER_YEAR
 from strategy.data import Universe
+from strategy.regime import (
+    REGIME_MONTHS,
+    selection_weeks,
+    trailing_compound_return,
+    vote_label,
+)
 
 
 class WeekPointLike(Protocol):
@@ -36,6 +42,9 @@ class WeekPointLike(Protocol):
     cash_weight: float
     effective_weights: dict[str, float]
     target_weights: dict[str, float]
+    shadow_weekly_return: float
+    regime_votes: tuple[tuple[int, str], ...]
+    in_regime_cash: bool
 
 
 @dataclass(frozen=True)
@@ -63,6 +72,124 @@ class SummaryStats:
     vol_ann: float
     sharpe: float
     cagr: float
+
+
+@dataclass(frozen=True)
+class RegimeReturnSeries:
+    months: int
+    dates: list[date]
+    values: list[float]
+
+
+def regime_unanimous_bearish_spans(
+    series: list[RegimeReturnSeries],
+) -> list[tuple[date, date]]:
+    """Date spans where every regime horizon has a negative trailing return."""
+    if len(series) < 3:
+        return []
+    months_set = {item.months for item in series}
+    value_by_date: dict[date, dict[int, float]] = {}
+    all_dates: set[date] = set()
+    for item in series:
+        for d, value in zip(item.dates, item.values):
+            all_dates.add(d)
+            value_by_date.setdefault(d, {})[item.months] = value
+    sorted_all = sorted(all_dates)
+    date_index = {d: index for index, d in enumerate(sorted_all)}
+
+    def unanimous_bearish(d: date) -> bool:
+        values = value_by_date.get(d, {})
+        return (
+            len(values) == len(months_set)
+            and all(values[months] < 0.0 for months in months_set)
+        )
+
+    bearish_dates = [d for d in sorted_all if unanimous_bearish(d)]
+    spans: list[tuple[date, date]] = []
+    index = 0
+    while index < len(bearish_dates):
+        end_index = index + 1
+        while end_index < len(bearish_dates):
+            if date_index[bearish_dates[end_index]] != date_index[bearish_dates[end_index - 1]] + 1:
+                break
+            end_index += 1
+        start = bearish_dates[index]
+        end = bearish_dates[end_index - 1]
+        start_idx = date_index[start]
+        end_idx = date_index[end]
+        if start_idx > 0:
+            prev = sorted_all[start_idx - 1]
+            x0 = prev + timedelta(days=(start - prev).days // 2)
+        else:
+            x0 = start - timedelta(days=3)
+        if end_idx + 1 < len(sorted_all):
+            nxt = sorted_all[end_idx + 1]
+            x1 = end + timedelta(days=(nxt - end).days // 2)
+        else:
+            x1 = end + timedelta(days=3)
+        spans.append((x0, x1))
+        index = end_index
+    return spans
+
+
+def shadow_returns_from_points(points: list[WeekPointLike]) -> list[float]:
+    return [point.shadow_weekly_return for point in points]
+
+
+def regime_return_series(
+    points: list[WeekPointLike],
+    *,
+    regime_months: tuple[int, ...] = REGIME_MONTHS,
+) -> list[RegimeReturnSeries]:
+    """Trailing shadow-book returns used by regime votes for each backtest week."""
+    regime_weeks = selection_weeks(regime_months)
+    series_by_months = [
+        RegimeReturnSeries(months=months, dates=[], values=[])
+        for months in regime_months
+    ]
+    shadow_returns: list[float] = []
+    for index, point in enumerate(points):
+        shadow_returns.append(point.shadow_weekly_return)
+        vote_months = {months for months, _vote in point.regime_votes}
+        for series, months, weeks in zip(
+            series_by_months,
+            regime_months,
+            regime_weeks,
+            strict=True,
+        ):
+            if months not in vote_months:
+                continue
+            trailing = trailing_compound_return(shadow_returns, weeks)
+            if trailing == trailing:
+                series.dates.append(date.fromisoformat(point.iso_date))
+                series.values.append(trailing)
+    return series_by_months
+
+
+def regime_vote_rows(
+    points: list[WeekPointLike],
+    *,
+    regime_months: tuple[int, ...] = REGIME_MONTHS,
+) -> list[tuple[int, float | None, str]] | None:
+    if not points:
+        return None
+    latest = points[-1]
+    if not latest.regime_votes:
+        return None
+    votes = dict(latest.regime_votes)
+    shadow_returns = shadow_returns_from_points(points)
+    rows: list[tuple[int, float | None, str]] = []
+    for months, weeks in zip(
+        regime_months,
+        selection_weeks(regime_months),
+        strict=True,
+    ):
+        trailing = trailing_compound_return(shadow_returns, weeks)
+        vote = votes.get(months, "")
+        trailing_value = None if trailing != trailing else trailing
+        label = vote_label(vote) if vote else "unknown"
+        rows.append((months, trailing_value, label))
+    return rows
 
 
 @dataclass(frozen=True)

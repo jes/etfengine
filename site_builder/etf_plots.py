@@ -18,11 +18,18 @@ from site_builder.metrics import (
     fraction_at_least,
     fraction_same_or_worse,
 )
-from site_builder.etf_data import WeekPointLike, rebased_equity, tracking_anchor_index
+from site_builder.etf_data import (
+    RegimeReturnSeries,
+    WeekPointLike,
+    rebased_equity,
+    regime_unanimous_bearish_spans,
+    tracking_anchor_index,
+)
 from site_builder.plots import (
     RRD_BLACK,
     RRD_BLUE,
     RRD_GRID,
+    RRD_GREEN,
     RRD_ORANGE,
     RRD_PIXEL,
     _apply_rrd_axis,
@@ -341,6 +348,69 @@ def plot_backtest_ath_distribution(
         ax.grid(True, color=RRD_GRID, linewidth=RRD_PIXEL, axis="y")
         _rrd_legend(ax, loc="lower right")
     fig.subplots_adjust(left=0.1, right=0.98, top=0.88, bottom=0.18)
+    _save_rrd(fig, output)
+
+
+REGIME_BEARISH_SHADE = "#dd9a9a"
+
+
+def plot_regime_returns(
+    *,
+    series: list[RegimeReturnSeries],
+    tracking_start: str,
+    output: Path,
+) -> None:
+    fig, ax = _rrd_subplots(1440, 576)
+    _apply_rrd_axis(ax)
+
+    for x0, x1 in regime_unanimous_bearish_spans(series):
+        ax.axvspan(
+            x0,
+            x1,
+            color=REGIME_BEARISH_SHADE,
+            alpha=0.35,
+            zorder=0,
+            linewidth=0,
+        )
+
+    colors = [RRD_BLUE, RRD_ORANGE, RRD_GREEN]
+    plotted = False
+    for index, item in enumerate(series):
+        if not item.dates:
+            continue
+        plotted = True
+        _rrd_plot(
+            ax,
+            item.dates,
+            item.values,
+            color=colors[index % len(colors)],
+            label=f"{item.months}m",
+        )
+
+    if not plotted:
+        ax.text(
+            0.5,
+            0.5,
+            "Not enough regime history",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+    anchor_date = date.fromisoformat(tracking_start)
+    ax.axvline(
+        anchor_date,
+        color=RRD_BLACK,
+        linestyle="--",
+        linewidth=RRD_PIXEL,
+        label="Tracking start",
+    )
+    ax.axhline(0.0, color=RRD_BLACK, linewidth=RRD_PIXEL, alpha=0.55)
+    ax.set_ylabel("Trailing return")
+    ax.set_title("Regime trailing returns")
+    ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0))
+    _rrd_legend(ax, loc="best")
+    fig.autofmt_xdate()
+    fig.subplots_adjust(left=0.1, right=0.98, top=0.86, bottom=0.22)
     _save_rrd(fig, output)
 
 
