@@ -210,7 +210,7 @@ class EtfSiteBuilderTests(unittest.TestCase):
         self.assertEqual(point_at_or_before(points, "2026-06-01").iso_date, "2026-01-01")
         self.assertIsNone(point_at_or_before(points, "2024-01-01"))
 
-    def test_allocation_rows_includes_weight_change_1y(self) -> None:
+    def test_allocation_rows_includes_weight_change_1m_and_1y(self) -> None:
         universe = _fake_universe()
         point = FakePoint(
             "2026-06-01",
@@ -219,6 +219,15 @@ class EtfSiteBuilderTests(unittest.TestCase):
             0.95,
             0.05,
             {"ie00bk5bqt80": 0.95},
+            {"ie00bk5bqt80": 1.0},
+        )
+        point_1m_ago = FakePoint(
+            "2026-05-01",
+            1.05,
+            0.01,
+            0.90,
+            0.10,
+            {"ie00bk5bqt80": 0.90},
             {"ie00bk5bqt80": 1.0},
         )
         point_1y_ago = FakePoint(
@@ -237,11 +246,14 @@ class EtfSiteBuilderTests(unittest.TestCase):
                 yahoo_dir=Path("/nonexistent"),
                 spark_dir=Path(tmp) / "sparklines",
                 as_of=date(2026, 6, 1),
+                point_1m_ago=point_1m_ago,
                 point_1y_ago=point_1y_ago,
             )
         self.assertEqual(len(rows), 2)
         etf_row = next(row for row in rows if row.market_id == "ie00bk5bqt80")
         cash_row = next(row for row in rows if row.market_id == "__cash__")
+        self.assertAlmostEqual(etf_row.weight_change_1m or 0.0, 0.05)
+        self.assertAlmostEqual(cash_row.weight_change_1m or 0.0, -0.05)
         self.assertAlmostEqual(etf_row.weight_change_1y or 0.0, 0.13)
         self.assertAlmostEqual(cash_row.weight_change_1y or 0.0, -0.13)
 
@@ -257,6 +269,15 @@ class EtfSiteBuilderTests(unittest.TestCase):
             {"ie00bk5bqt80": 1.0},
             shadow_weekly_return=0.02,
             regime_votes=((3, "invested"), (6, "cash"), (12, "invested")),
+        )
+        point_1m_ago = FakePoint(
+            "2026-05-01",
+            1.05,
+            0.01,
+            0.90,
+            0.10,
+            {"ie00bk5bqt80": 0.90},
+            {"ie00bk5bqt80": 1.0},
         )
         point_1y_ago = FakePoint(
             "2025-06-01",
@@ -287,6 +308,7 @@ class EtfSiteBuilderTests(unittest.TestCase):
                     yahoo_dir=Path("/nonexistent"),
                     spark_dir=Path(tmp) / "sparklines",
                     as_of=date(2026, 6, 1),
+                    point_1m_ago=point_1m_ago,
                     point_1y_ago=point_1y_ago,
                 ),
                 invested_weight=0.95,
@@ -301,6 +323,7 @@ class EtfSiteBuilderTests(unittest.TestCase):
             self.assertIn("https://investengine.com/share/portfolio/example/", text)
             self.assertIn("Portfolio weights", text)
             self.assertIn("Backtest weight", text)
+            self.assertIn("(+5.00pp since 1m ago)", text)
             self.assertIn("(+13.00pp since 1y ago)", text)
             self.assertIn('style="color: green"', text)
             self.assertIn("tracking from 2026-06-20", text)

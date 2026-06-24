@@ -201,6 +201,7 @@ class AllocationRow:
     return_1y: float | None
     ie_weight_pct: float | None = None
     icon_path: str = ""
+    weight_change_1m: float | None = None
     weight_change_1y: float | None = None
 
 
@@ -580,18 +581,18 @@ def market_label(universe: Universe, market_id: str) -> str:
     return f"{ticker} — {name}" if ticker != market_id else name
 
 
-def _weight_change_1y(
+def _weight_change_since(
     current: float,
     *,
-    point_1y_ago: WeekPointLike | None,
+    past_point: WeekPointLike | None,
     market_id: str,
 ) -> float | None:
-    if point_1y_ago is None:
+    if past_point is None:
         return None
     past = (
-        point_1y_ago.cash_weight
+        past_point.cash_weight
         if market_id == "__cash__"
-        else point_1y_ago.effective_weights.get(market_id, 0.0)
+        else past_point.effective_weights.get(market_id, 0.0)
     )
     if current <= 1e-6 and past <= 1e-6:
         return None
@@ -607,6 +608,7 @@ def allocation_rows(
     as_of: date,
     ie_weights_by_market_id: dict[str, float] | None = None,
     ie_icons_by_market_id: dict[str, str] | None = None,
+    point_1m_ago: WeekPointLike | None = None,
     point_1y_ago: WeekPointLike | None = None,
 ) -> list[AllocationRow]:
     spark_dir.mkdir(parents=True, exist_ok=True)
@@ -632,9 +634,14 @@ def allocation_rows(
                 return_1y=total_return_from_prices(prices),
                 ie_weight_pct=ie_weights.get(market_id),
                 icon_path=ie_icons.get(market_id, ""),
-                weight_change_1y=_weight_change_1y(
+                weight_change_1m=_weight_change_since(
                     weight,
-                    point_1y_ago=point_1y_ago,
+                    past_point=point_1m_ago,
+                    market_id=market_id,
+                ),
+                weight_change_1y=_weight_change_since(
+                    weight,
+                    past_point=point_1y_ago,
                     market_id=market_id,
                 ),
             )
@@ -647,9 +654,14 @@ def allocation_rows(
                 weight_pct=point.cash_weight,
                 spark_path="",
                 return_1y=None,
-                weight_change_1y=_weight_change_1y(
+                weight_change_1m=_weight_change_since(
                     point.cash_weight,
-                    point_1y_ago=point_1y_ago,
+                    past_point=point_1m_ago,
+                    market_id="__cash__",
+                ),
+                weight_change_1y=_weight_change_since(
+                    point.cash_weight,
+                    past_point=point_1y_ago,
                     market_id="__cash__",
                 ),
             )
