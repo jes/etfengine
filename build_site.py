@@ -323,6 +323,7 @@ def build_snapshot(
         portfolio_url=etf_config.INVESTENGINE_PORTFOLIO_URL,
         ie_snapshot=ie_snapshot,
         regime_rows=regime_vote_rows(result.points),
+        drift_band=etf_config.DRIFT_BAND,
     )
 
 

@@ -23,7 +23,7 @@ from site_builder.etf_data import (
     tracking_anchor_index,
 )
 from site_builder.metrics import BenchmarkRegressionStats, benchmark_regression_stats, days_since_ath_series, max_drawdown
-from site_builder.etf_html import build_index_html
+from site_builder.etf_html import _ie_weight_cell, build_index_html
 from site_builder.etf_plots import (
     _format_vol_cap_label,
     plot_etf_equity_since_tracking,
@@ -323,8 +323,8 @@ class EtfSiteBuilderTests(unittest.TestCase):
             self.assertIn("https://investengine.com/share/portfolio/example/", text)
             self.assertIn("Portfolio weights", text)
             self.assertIn("Backtest weight", text)
-            self.assertIn("(+5.00pp since 1m ago)", text)
-            self.assertIn("(+13.00pp since 1y ago)", text)
+            self.assertIn("1m: <span style=\"color: green\">+5.00pp</span>", text)
+            self.assertIn("1y: <span style=\"color: green\">+13.00pp</span>", text)
             self.assertIn('style="color: green"', text)
             self.assertIn("tracking from 2026-06-20", text)
             self.assertIn("Days since ATH", text)
@@ -339,6 +339,20 @@ class EtfSiteBuilderTests(unittest.TestCase):
             self.assertIn("+12.00%", text)
             self.assertIn("-3.00%", text)
             self.assertNotIn("VWRP CAGR", text)
+
+    def test_ie_weight_cell_shows_target_drift(self) -> None:
+        within = _ie_weight_cell(0.21, 0.20, drift_band=0.05)
+        self.assertIn("21.00%", within)
+        self.assertIn("(+1.00pp)", within)
+        self.assertNotIn('style="color: red"', within)
+
+        outside = _ie_weight_cell(0.22, 0.20, drift_band=0.05)
+        self.assertIn("22.00%", outside)
+        self.assertIn("(+2.00pp)", outside)
+        self.assertIn('style="color: red"', outside)
+
+        self.assertEqual(_ie_weight_cell(0.20, 0.20, drift_band=0.05), "20.00%")
+        self.assertEqual(_ie_weight_cell(None, 0.20, drift_band=0.05), "—")
 
     def test_regime_unanimous_bearish_spans_merges_contiguous_weeks(self) -> None:
         series = [

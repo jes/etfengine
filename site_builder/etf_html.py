@@ -14,6 +14,7 @@ from site_builder.etf_data import (
 )
 from site_builder.investengine_portfolio import InvestEngineSnapshot
 from site_builder.metrics import BenchmarkRegressionStats
+from strategy.costs import within_relative_drift_band
 from strategy.data import Universe
 
 
@@ -142,15 +143,35 @@ def _backtest_weight_cell(
     change_1y: float | None,
 ) -> str:
     base = _weight_cell(value)
-    parts: list[str] = []
-    for change, label in ((change_1m, "1m ago"), (change_1y, "1y ago")):
+    segments: list[str] = []
+    for change, label in ((change_1m, "1m"), (change_1y, "1y")):
         if change is None or change != change:
             continue
-        pp_text = f"({change * 100:+.2f}pp since {label})"
-        parts.append(_coloured_span(pp_text, change))
-    if not parts:
+        pp_text = f"{change * 100:+.2f}pp"
+        segments.append(f"{label}: {_coloured_span(pp_text, change)}")
+    if not segments:
         return base
-    return f"{base} {' '.join(parts)}"
+    return f"{base} ({'; '.join(segments)})"
+
+
+def _ie_weight_cell(
+    value: float | None,
+    target: float | None,
+    *,
+    drift_band: float,
+) -> str:
+    base = _weight_cell(value)
+    if value is None or value != value:
+        return base
+    if target is None or target != target:
+        return base
+    delta = value - target
+    if abs(delta) <= 1e-12:
+        return base
+    pp_text = f"({delta * 100:+.2f}pp)"
+    if within_relative_drift_band(value, target, drift_band):
+        return f"{base} {html.escape(pp_text)}"
+    return f'{base} <span style="color: red">{html.escape(pp_text)}</span>'
 
 
 def build_index_html(
@@ -173,6 +194,7 @@ def build_index_html(
     portfolio_url: str | None = None,
     ie_snapshot: InvestEngineSnapshot | None = None,
     regime_rows: list[tuple[int, float | None, str]] | None = None,
+    drift_band: float = 0.05,
 ) -> None:
     lines: list[str] = [
         "<!DOCTYPE html>",
@@ -359,7 +381,7 @@ def build_index_html(
                 "<tr>"
                 f"<td>{icon_html}{html.escape(row.label)}</td>"
                 f"<td>{_backtest_weight_cell(row.weight_pct if row.weight_pct > 1e-6 else None, row.weight_change_1m, row.weight_change_1y)}</td>"
-                f"<td>{_weight_cell(row.ie_weight_pct)}</td>"
+                f"<td>{_ie_weight_cell(row.ie_weight_pct, row.weight_pct, drift_band=drift_band)}</td>"
                 f"<td>{return_label}{spark_html}</td>"
                 "</tr>"
             )
