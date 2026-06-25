@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pandas as pd
 
-DEFAULT_INPUT = Path("etfs/output/markets_stats_allowlist.csv")
+DEFAULT_INPUT = Path("etfs/markets.csv")
 DEFAULT_OUTPUT_DIR = Path("etfs/yahoo")
 HISTORY_COLUMNS = ("Open", "High", "Low", "Close", "Adj Close", "Volume")
 ADJUSTED_CLOSE_COLUMN = "Adj Close"

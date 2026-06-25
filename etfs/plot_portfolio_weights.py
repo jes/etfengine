@@ -20,7 +20,6 @@ if str(ETFS_DIR) not in sys.path:
 from strategy.data import allocatable_assets, load_universe
 
 from sharpening_backtest import (
-    DEFAULT_ALLOWLIST,
     DEFAULT_MARKETS,
     DEFAULT_YAHOO,
     build_schedule_and_run,
@@ -33,7 +32,12 @@ from sharpening_backtest import (
     resolve_markets_csv,
     write_weight_history,
 )
-from sharpening_optimizer import DEFAULT_MIN_WEIGHT, REBALANCE_FREQUENCIES, default_ewma_span
+from sharpening_optimizer import (
+    DEFAULT_LISTING_YEARS,
+    DEFAULT_MIN_WEIGHT,
+    REBALANCE_FREQUENCIES,
+    default_ewma_span,
+)
 
 DEFAULT_OUTPUT = ETFS_DIR / "output" / "sharpening_portfolio_weights.png"
 DEFAULT_WEIGHTS_CSV = ETFS_DIR / "output" / "sharpening_portfolio_weights.csv"
@@ -53,7 +57,7 @@ def main() -> int:
     )
     parser.add_argument("--min-weight", type=float, default=DEFAULT_MIN_WEIGHT)
     parser.add_argument("--min-coverage", type=float, default=0.95)
-    parser.add_argument("--listing-years", type=float, default=1.0)
+    parser.add_argument("--listing-years", type=float, default=DEFAULT_LISTING_YEARS)
     parser.add_argument("--max-abs-daily-return", type=float, default=0.20)
     parser.add_argument("--drift-band", type=float, default=0.05)
     parser.add_argument(
@@ -75,7 +79,7 @@ def main() -> int:
     parser.add_argument(
         "--allowlist-csv",
         type=Path,
-        default=DEFAULT_ALLOWLIST,
+        default=None,
         help="If set, only load ETFs whose id appears in this CSV",
     )
     args = parser.parse_args()

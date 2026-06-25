@@ -24,8 +24,6 @@ INVESTENGINE_ICONS_CACHE_DIR = Path("public/icons/cache")
 
 ETFS_DIR = Path(__file__).resolve().parent
 MARKETS_MANIFEST = ETFS_DIR / "markets.csv"
-MARKETS_STATS_ALLOWLIST = ETFS_DIR / "output" / "markets_stats_allowlist.csv"
-MARKET_STATS_ALLOWLIST = ETFS_DIR / "output" / "market_stats.csv"
 YAHOO_DIR = ETFS_DIR / "yahoo"
 
 BACKTEST_YEARS = 10.0
@@ -37,4 +35,5 @@ VOL_CAP_SENSITIVITY = (0.05, 0.10, 0.20, 0.25, 0.35, 0.50, 0.60)
 MIN_WEIGHT = 0.05
 MAX_HOLDINGS = 20
 DRIFT_BAND = 0.05
+LISTING_YEARS = 2.0
 DIVIDENDS = "any"

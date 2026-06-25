@@ -26,6 +26,7 @@ DEFAULT_EWMA_SPAN_BY_FREQUENCY = {
     "quarterly": 4,
     "annual": 2,
 }
+DEFAULT_LISTING_YEARS = 2.0
 
 
 def default_ewma_span(rebalance_frequency: str) -> int:

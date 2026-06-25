@@ -49,6 +49,7 @@ from build_universe import (
     load_identifier_allowlist,
 )
 from sharpening_optimizer import (
+    DEFAULT_LISTING_YEARS,
     DEFAULT_MIN_WEIGHT,
     REBALANCE_FREQUENCIES,
     build_etf_weight_schedule,
@@ -57,19 +58,15 @@ from sharpening_optimizer import (
 )
 
 DEFAULT_MARKETS = ETFS_DIR / "markets.csv"
-DEFAULT_MARKETS_STATS_ALLOWLIST = ETFS_DIR / "output" / "markets_stats_allowlist.csv"
 DEFAULT_YAHOO = ETFS_DIR / "yahoo"
 BENCHMARK_ID = "ie00bk5bqt80"  # VWRP.L, accumulating FTSE All-World (IE ISA)
 DEFAULT_OUTPUT = ETFS_DIR / "output" / "sharpening_equity.png"
 DEFAULT_DIAGNOSTICS = ETFS_DIR / "output" / "sharpening_weekly_diagnostics.csv"
-DEFAULT_ALLOWLIST = ETFS_DIR / "output" / "market_stats.csv"
 
 
 def resolve_markets_csv(path: Path | None = None) -> Path:
     if path is not None:
         return path
-    if DEFAULT_MARKETS_STATS_ALLOWLIST.is_file():
-        return DEFAULT_MARKETS_STATS_ALLOWLIST
     return DEFAULT_MARKETS
 
 
@@ -811,7 +808,7 @@ def load_backtest_universe(
     project_root: Path,
     markets_csv: Path | None = None,
     yahoo_dir: Path | None = None,
-    allowlist_csv: Path | None = DEFAULT_ALLOWLIST,
+    allowlist_csv: Path | None = None,
     dividends: str = "any",
 ) -> Universe:
     markets_csv = resolve_markets_csv(markets_csv)
@@ -847,7 +844,7 @@ def run_etf_backtest(
     ewma_span: int | None = None,
     min_weight: float = DEFAULT_MIN_WEIGHT,
     min_coverage: float = 0.95,
-    listing_years: float = 1.0,
+    listing_years: float = DEFAULT_LISTING_YEARS,
     max_abs_daily_return: float = 0.20,
     drift_band: float = 0.05,
     rebalance_frequency: str = "monthly",
@@ -909,7 +906,7 @@ def run_vol_cap_sensitivity_backtests(
     ewma_span: int | None = None,
     min_weight: float = DEFAULT_MIN_WEIGHT,
     min_coverage: float = 0.95,
-    listing_years: float = 1.0,
+    listing_years: float = DEFAULT_LISTING_YEARS,
     max_abs_daily_return: float = 0.20,
     drift_band: float = 0.05,
     rebalance_frequency: str = "monthly",
@@ -1011,7 +1008,7 @@ def main() -> int:
     )
     parser.add_argument("--min-weight", type=float, default=DEFAULT_MIN_WEIGHT)
     parser.add_argument("--min-coverage", type=float, default=0.95)
-    parser.add_argument("--listing-years", type=float, default=1.0)
+    parser.add_argument("--listing-years", type=float, default=DEFAULT_LISTING_YEARS)
     parser.add_argument("--max-abs-daily-return", type=float, default=0.20)
     parser.add_argument("--drift-band", type=float, default=0.05)
     parser.add_argument(
@@ -1034,8 +1031,8 @@ def main() -> int:
     parser.add_argument(
         "--allowlist-csv",
         type=Path,
-        default=DEFAULT_ALLOWLIST,
-        help="Only load ETFs whose id appears in this CSV (default: market_stats.csv)",
+        default=None,
+        help="Only load ETFs whose id appears in this CSV (default: no stats allowlist)",
     )
     args = parser.parse_args()
     ewma_span = (

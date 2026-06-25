@@ -8,7 +8,7 @@ Monthly InvestEngine ETF strategy: refresh Yahoo prices, run a rolling backtest,
 ./run.sh
 ```
 
-This fetches updated prices for the frozen universe (`etfs/output/markets_stats_allowlist.csv`) and rebuilds `public/index.html`. No live trading or broker API.
+This fetches updated prices for the frozen universe (`etfs/markets.csv`) and rebuilds `public/index.html`. No live trading or broker API.
 
 ## Configuration
 

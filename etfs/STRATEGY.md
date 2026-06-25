@@ -72,20 +72,21 @@ flagged rows from the output.
 
 Writes `etfs/output/market_stats.csv`. Expect **~389** rows (varies with price refresh).
 
-### 5. Backtest manifest (stats ∩ markets + RF + benchmark)
+### 5. Optional stats-pruned report
 
 ```bash
 .venv/bin/python etfs/build_markets_stats_allowlist.py
 ```
 
 Writes:
-- `etfs/output/markets_stats_allowlist.csv` — optimiser manifest
+- `etfs/output/markets_stats_allowlist.csv` — stats-pruned manifest report
 - filters `etfs/output/market_stats.csv` to the same intersection
 
 Always includes **risk-free** (`us-30-day-fed-funds-rate`) and **benchmark** (`ie00bk5bqt80`
 VWRP) even if they fail the 500-week stats cut.
 
-Expect **~391 manifest rows** (389 stats + RF + VWRP).
+Expect **~391 report rows** (389 stats + RF + VWRP). The backtest no longer uses this
+file by default.
 
 ### 6. Backtest + equity plot
 
@@ -108,20 +109,22 @@ Expect **~391 manifest rows** (389 stats + RF + VWRP).
 
 `sharpening_backtest.py` resolves the manifest via `resolve_markets_csv()`:
 
-1. `etfs/output/markets_stats_allowlist.csv` if it exists (else `etfs/markets.csv`)
+1. `etfs/markets.csv` unless `--markets-csv` is supplied
 
-Then intersects **three** allowlists before `load_universe()`:
+Then intersects the causal/tradability allowlists before `load_universe()`:
 
 | Filter | Source |
 |---|---|
-| Price-history stats | `etfs/output/market_stats.csv` (`--allowlist-csv`, default) |
+| Price-history stats | Optional only (`--allowlist-csv`; no default) |
 | Dividend policy | `--dividends any` → no extra filter |
 | InvestEngine tradable | `investengine_market_ids(etfs/markets.csv)` vs `etfs/_sources/investengine_allowlist.csv` |
 
 Always added to allowed ids: **benchmark** (`ie00bk5bqt80`), **risk-free**
 (`us-30-day-fed-funds-rate`).
 
-**Reference load (Jun 2026 prices):** 390 allocatable ETFs + risk-free.
+**Reference load (Jun 2026 prices):** all InvestEngine manifest ETFs with Yahoo history,
+plus risk-free. Newer ETFs are admitted causally once they have enough history at a
+rebalance date.
 
 ### Universe summary
 
@@ -129,9 +132,9 @@ Always added to allowed ids: **benchmark** (`ie00bk5bqt80`), **risk-free**
 |---|---|---|
 | IE broker allowlist | `etfs/_sources/investengine_allowlist.csv` | 870 |
 | justETF ∩ IE manifest | `etfs/markets.csv` | 870 + RF |
-| ≥500 weeks history | `etfs/output/market_stats.csv` | 389 |
-| Backtest manifest | `etfs/output/markets_stats_allowlist.csv` | 389 + RF + VWRP |
-| Loaded for optimiser | (intersection above) | 390 + RF |
+| ≥500 weeks history report | `etfs/output/market_stats.csv` | 389 |
+| Stats-pruned manifest report | `etfs/output/markets_stats_allowlist.csv` | 389 + RF + VWRP |
+| Loaded for optimiser | `etfs/markets.csv` ∩ available Yahoo histories | varies |
 
 | Field | Value |
 |---|---|
@@ -200,7 +203,7 @@ Applied each rebalance date on the 12-month lookback window:
 | Rule | Parameter |
 |---|---|
 | Min weekly coverage | 95% of lookback weeks (`eligible_assets`) |
-| Listed before window | first price date ≤ end − 1 year |
+| Listed before rebalance | first price date ≤ end − 2 years |
 | Bad daily tick | exclude if any daily \|r\| > 20% in lookback |
 
 ### Search method (sparse)
@@ -305,7 +308,7 @@ quotes.
 | Min weight | 5% | `--min-weight 0.05` | |
 | Max holdings | 20 | `--max-holdings 20` | |
 | Min data coverage | 95% | `--min-coverage 0.95` | Of lookback weeks |
-| Min listing age | 1 year | `--listing-years 1.0` | Before rebalance date |
+| Min listing age | 2 years | `--listing-years 2.0` | Before rebalance date |
 | Bad tick filter | \|daily r\| > 20% | `--max-abs-daily-return 0.20` | Excludes asset for window |
 | Drift band | 5% relative | `--drift-band 0.05` | |
 | Dividend filter | **any** | `--dividends` | Default: any |
@@ -361,7 +364,7 @@ Effective weights from `etfs/output/sharpening_portfolio_weights.csv` (after dri
 | `etfs/output/sharpening_portfolio_weights.png` | `plot_portfolio_weights.py` | Stacked area chart |
 | `etfs/output/sharpening_portfolio_weights.csv` | `plot_portfolio_weights.py` | Weekly effective weights + `__cash__` |
 | `etfs/output/market_stats.csv` | `market_stats.py` | Per-ETF history stats |
-| `etfs/output/markets_stats_allowlist.csv` | `build_markets_stats_allowlist.py` | Backtest manifest |
+| `etfs/output/markets_stats_allowlist.csv` | `build_markets_stats_allowlist.py` | Optional stats-pruned manifest report |
 
 ---
 
@@ -374,7 +377,7 @@ After reproduction, expect approximately:
 | IE allowlist rows | ~870 |
 | `markets.csv` ETF rows | ~870 |
 | `market_stats.csv` rows | ~389 |
-| Loaded allocatable ETFs | ~390 |
+| Loaded allocatable ETFs | all manifest ETFs with Yahoo history |
 | Monthly optimiser steps | ~133 |
 | Trade weeks in backtest | ~522 |
 | Strategy CAGR (Jun 2026 data) | ~19.5% (±1% if prices refreshed) |
@@ -383,9 +386,8 @@ After reproduction, expect approximately:
 If results diverge, check in order:
 
 1. `investengine_allowlist.csv` contains **both** ACCUMULATING and DISTRIBUTING (~870 rows).
-2. `build_markets_stats_allowlist.py` was run after `market_stats.py`.
-3. `etfs/yahoo/` price files match `markets.csv` ids.
-4. `OPTIMIZER_SEED = 1337` unchanged in `strategy/constants.py`.
+2. `etfs/yahoo/` price files match `markets.csv` ids.
+3. `OPTIMIZER_SEED = 1337` unchanged in `strategy/constants.py`.
 
 ---
 

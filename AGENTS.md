@@ -16,7 +16,7 @@ Do not assume `python` is available on `PATH`. On this machine it is not.
 ./run.sh
 ```
 
-Refreshes Yahoo prices for the frozen universe manifest (`etfs/output/markets_stats_allowlist.csv`)
+Refreshes Yahoo prices for the frozen universe manifest (`etfs/markets.csv`)
 and rebuilds the static site under `public/`. Does **not** refresh the investable universe.
 
 Tracking start date (vertical line + equity rebase): `etfs/config.py` → `TRACKING_START_DATE`.

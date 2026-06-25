@@ -5,7 +5,7 @@ DAYS_PER_YEAR = 252
 RISK_FREE_ID = "us-30-day-fed-funds-rate"
 
 _ETFS_DIR = Path("etfs")
-MARKETS_CSV = _ETFS_DIR / "output" / "markets_stats_allowlist.csv"
+MARKETS_CSV = _ETFS_DIR / "markets.csv"
 YAHOO_DIR = _ETFS_DIR / "yahoo"
 
 OPTIMISE_GREEDY_ROUNDS = 3

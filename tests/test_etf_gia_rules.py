@@ -12,13 +12,24 @@ from etfs.fetch_investengine_universe import (
     extract_securities,
     filter_securities,
 )
-from etfs.sharpening_backtest import investengine_market_ids, weight_legend_indices
+from etfs.sharpening_backtest import (
+    load_backtest_universe,
+    investengine_market_ids,
+    resolve_markets_csv,
+    run_etf_backtest,
+    run_vol_cap_sensitivity_backtests,
+    weight_legend_indices,
+)
 from etfs.sharpening_optimizer import (
+    DEFAULT_LISTING_YEARS,
     build_etf_weight_schedule,
     default_ewma_span,
+    filter_listing_age,
+    listing_cutoff_from_end,
     optimize_window,
     select_rebalance_end_dates,
 )
+from strategy.data import Asset, Universe
 from strategy.weights import ewma_smooth_capped_weight_rows
 
 
@@ -95,6 +106,62 @@ class EtfScheduleRuleTests(unittest.TestCase):
             select_rebalance_end_dates(dates, "monthly"),
             ["2026-01-30", "2026-02-27"],
         )
+
+    def test_default_universe_load_does_not_use_stats_pruned_manifest(self):
+        self.assertTrue(resolve_markets_csv().as_posix().endswith("/etfs/markets.csv"))
+        default_allowlist = inspect.signature(load_backtest_universe).parameters[
+            "allowlist_csv"
+        ].default
+        self.assertIsNone(default_allowlist)
+
+    def test_backtest_entry_points_default_to_two_year_listing_age(self):
+        self.assertEqual(DEFAULT_LISTING_YEARS, 2.0)
+        self.assertEqual(
+            inspect.signature(run_etf_backtest).parameters["listing_years"].default,
+            DEFAULT_LISTING_YEARS,
+        )
+        self.assertEqual(
+            inspect.signature(run_vol_cap_sensitivity_backtests).parameters[
+                "listing_years"
+            ].default,
+            DEFAULT_LISTING_YEARS,
+        )
+
+    def test_rebalance_listing_age_filter_is_causal_two_year_gate(self):
+        universe = Universe(
+            assets={
+                "old": Asset(
+                    market_id="old",
+                    name="Old ETF",
+                    yahoo_ticker="OLD.L",
+                    returns_by_date={},
+                    daily_returns_by_date={},
+                    ohlc_by_date={},
+                    first_date="2024-06-28",
+                ),
+                "new": Asset(
+                    market_id="new",
+                    name="New ETF",
+                    yahoo_ticker="NEW.L",
+                    returns_by_date={},
+                    daily_returns_by_date={},
+                    ohlc_by_date={},
+                    first_date="2024-07-05",
+                ),
+            },
+            weekly_dates=[],
+            market_names={},
+            market_categories={},
+            spread_fraction={},
+        )
+
+        cutoff = listing_cutoff_from_end(
+            "2026-06-30",
+            listing_years=DEFAULT_LISTING_YEARS,
+        )
+
+        self.assertEqual(cutoff, "2024-06-30")
+        self.assertEqual(filter_listing_age(universe, ["old", "new"], cutoff), ["old"])
 
     def test_capped_ewma_drops_sub_five_percent_weights_without_renormalizing(self):
         rows = [

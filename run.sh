@@ -13,7 +13,7 @@ export PYTHONUNBUFFERED=1
   >> "public/logs/$date/fetch_investengine.log" 2>&1
 
 .venv/bin/python fetch_yahoo_history.py \
-  --input etfs/output/markets_stats_allowlist.csv \
+  --input etfs/markets.csv \
   --output-dir etfs/yahoo \
   >> "public/logs/$date/fetch.log" 2>&1
 

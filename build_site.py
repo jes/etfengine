@@ -109,9 +109,9 @@ def build_snapshot(
     print("Loading universe…", flush=True)
     universe = load_backtest_universe(
         project_root=project_root,
-        markets_csv=etf_config.MARKETS_STATS_ALLOWLIST,
+        markets_csv=etf_config.MARKETS_MANIFEST,
         yahoo_dir=etf_config.YAHOO_DIR,
-        allowlist_csv=etf_config.MARKET_STATS_ALLOWLIST,
+        allowlist_csv=None,
         dividends=etf_config.DIVIDENDS,
     )
 
@@ -124,6 +124,7 @@ def build_snapshot(
         lookback_months=etf_config.LOOKBACK_MONTHS,
         ewma_span=etf_config.EWMA_SPAN,
         min_weight=etf_config.MIN_WEIGHT,
+        listing_years=etf_config.LISTING_YEARS,
         rebalance_frequency=etf_config.REBALANCE_FREQUENCY,
         drift_band=etf_config.DRIFT_BAND,
     )
@@ -157,6 +158,7 @@ def build_snapshot(
             lookback_months=etf_config.LOOKBACK_MONTHS,
             ewma_span=etf_config.EWMA_SPAN,
             min_weight=etf_config.MIN_WEIGHT,
+            listing_years=etf_config.LISTING_YEARS,
             rebalance_frequency=etf_config.REBALANCE_FREQUENCY,
             drift_band=etf_config.DRIFT_BAND,
         )
