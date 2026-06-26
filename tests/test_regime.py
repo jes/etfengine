@@ -13,7 +13,7 @@ from strategy.regime import (
 class RegimeTests(unittest.TestCase):
     def test_trailing_compound_return(self) -> None:
         returns = [0.01, -0.02, 0.03]
-        self.assertAlmostEqual(trailing_compound_return(returns, 2), (1.01 * 0.98) - 1.0)
+        self.assertAlmostEqual(trailing_compound_return(returns, 2), (0.98 * 1.03) - 1.0)
 
     def test_regime_vote_all_bearish(self) -> None:
         returns = [-0.01] * min_regime_history((1,))

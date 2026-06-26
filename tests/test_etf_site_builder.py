@@ -10,6 +10,7 @@ from pathlib import Path
 from site_builder.etf_data import (
     SummaryStats,
     RegimeReturnSeries,
+    _recommended_ie_integer_weights,
     allocation_rows,
     ath_snapshot,
     drawdown_snapshot,
@@ -256,6 +257,17 @@ class EtfSiteBuilderTests(unittest.TestCase):
         self.assertAlmostEqual(cash_row.weight_change_1m or 0.0, -0.05)
         self.assertAlmostEqual(etf_row.weight_change_1y or 0.0, 0.13)
         self.assertAlmostEqual(cash_row.weight_change_1y or 0.0, -0.13)
+        self.assertEqual(etf_row.recommended_ie_weight_pct, 100)
+        self.assertAlmostEqual(cash_row.recommended_ie_cash_amount or 0.0, 2000.0)
+
+    def test_recommended_ie_integer_weights_sum_to_100(self) -> None:
+        weights = _recommended_ie_integer_weights([0.05, 0.05, 0.05])
+        self.assertEqual(weights, [34, 33, 33])
+        self.assertEqual(sum(weights), 100)
+
+        weights = _recommended_ie_integer_weights([0.315, 0.315, 0.315])
+        self.assertEqual(weights, [34, 33, 33])
+        self.assertEqual(sum(weights), 100)
 
     def test_build_index_html_writes_file(self) -> None:
         universe = _fake_universe()
@@ -323,6 +335,9 @@ class EtfSiteBuilderTests(unittest.TestCase):
             self.assertIn("https://investengine.com/share/portfolio/example/", text)
             self.assertIn("Portfolio weights", text)
             self.assertIn("Backtest weight", text)
+            self.assertIn("Recommended InvestEngine weight", text)
+            self.assertIn(">100%</td>", text)
+            self.assertIn("£2000 (on a £40k balance)", text)
             self.assertIn("1m: <span style=\"color: green\">+5.00pp</span>", text)
             self.assertIn("1y: <span style=\"color: green\">+13.00pp</span>", text)
             self.assertIn('style="color: green"', text)

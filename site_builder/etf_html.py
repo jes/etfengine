@@ -174,6 +174,14 @@ def _ie_weight_cell(
     return f'{base} <span style="color: red">{html.escape(pp_text)}</span>'
 
 
+def _recommended_ie_weight_cell(row: AllocationRow) -> str:
+    if row.recommended_ie_weight_pct is not None:
+        return f"{row.recommended_ie_weight_pct:d}%"
+    if row.recommended_ie_cash_amount is not None:
+        return f"£{row.recommended_ie_cash_amount:.0f} (on a £40k balance)"
+    return "—"
+
+
 def build_index_html(
     *,
     output: Path,
@@ -363,7 +371,7 @@ def build_index_html(
             + " Return sparklines use Yahoo prices and are backtest context only."
             "</p>",
             "<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\">",
-            "<tr><th>ETF</th><th>Backtest weight</th><th>InvestEngine weight</th><th>Return (1y)</th></tr>",
+            "<tr><th>ETF</th><th>Backtest weight</th><th>Recommended InvestEngine weight</th><th>InvestEngine weight</th><th>Return (1y)</th></tr>",
         ]
     )
     if allocations:
@@ -381,12 +389,13 @@ def build_index_html(
                 "<tr>"
                 f"<td>{icon_html}{html.escape(row.label)}</td>"
                 f"<td>{_backtest_weight_cell(row.weight_pct if row.weight_pct > 1e-6 else None, row.weight_change_1m, row.weight_change_1y)}</td>"
+                f"<td>{html.escape(_recommended_ie_weight_cell(row))}</td>"
                 f"<td>{_ie_weight_cell(row.ie_weight_pct, row.weight_pct, drift_band=drift_band)}</td>"
                 f"<td>{return_label}{spark_html}</td>"
                 "</tr>"
             )
     else:
-        lines.append("<tr><td colspan=\"4\">No holdings.</td></tr>")
+        lines.append("<tr><td colspan=\"5\">No holdings.</td></tr>")
     lines.append("</table>")
 
     if ie_snapshot and ie_snapshot.equity_holdings:

@@ -199,10 +199,50 @@ class AllocationRow:
     weight_pct: float
     spark_path: str
     return_1y: float | None
+    recommended_ie_weight_pct: int | None = None
+    recommended_ie_cash_amount: float | None = None
     ie_weight_pct: float | None = None
     icon_path: str = ""
     weight_change_1m: float | None = None
     weight_change_1y: float | None = None
+
+
+RECOMMENDED_IE_BALANCE_GBP = 40_000.0
+
+
+def _recommended_ie_integer_weights(weights: list[float]) -> list[int]:
+    invested = sum(weight for weight in weights if weight > 0)
+    if invested <= 1e-12:
+        return [0 for _ in weights]
+    exact = [weight / invested * 100.0 for weight in weights]
+    rounded = [int(value + 0.5) for value in exact]
+    delta = 100 - sum(rounded)
+    if delta == 0:
+        return rounded
+
+    if delta > 0:
+        order = sorted(
+            range(len(exact)),
+            key=lambda index: (exact[index] - rounded[index], exact[index]),
+            reverse=True,
+        )
+        for index in order[:delta]:
+            rounded[index] += 1
+    else:
+        order = sorted(
+            range(len(exact)),
+            key=lambda index: (rounded[index] - exact[index], rounded[index]),
+            reverse=True,
+        )
+        remaining = -delta
+        for index in order:
+            if remaining <= 0:
+                break
+            if rounded[index] <= 0:
+                continue
+            rounded[index] -= 1
+            remaining -= 1
+    return rounded
 
 
 def tracking_anchor_index(dates: list[str], tracking_start: str) -> int:
@@ -620,9 +660,15 @@ def allocation_rows(
         key=lambda item: item[1],
         reverse=True,
     )
-    for market_id, weight in weights:
-        if weight <= 1e-6:
-            continue
+    visible_weights = [(market_id, weight) for market_id, weight in weights if weight > 1e-6]
+    recommended_weights = dict(
+        zip(
+            (market_id for market_id, _ in visible_weights),
+            _recommended_ie_integer_weights([weight for _, weight in visible_weights]),
+            strict=True,
+        )
+    )
+    for market_id, weight in visible_weights:
         prices = yahoo_close_prices_last_year(market_id, yahoo_dir, as_of=as_of)
         spark_name = f"{market_id}.png"
         rows.append(
@@ -632,6 +678,7 @@ def allocation_rows(
                 weight_pct=weight,
                 spark_path=f"sparklines/{spark_name}",
                 return_1y=total_return_from_prices(prices),
+                recommended_ie_weight_pct=recommended_weights.get(market_id),
                 ie_weight_pct=ie_weights.get(market_id),
                 icon_path=ie_icons.get(market_id, ""),
                 weight_change_1m=_weight_change_since(
@@ -654,6 +701,7 @@ def allocation_rows(
                 weight_pct=point.cash_weight,
                 spark_path="",
                 return_1y=None,
+                recommended_ie_cash_amount=point.cash_weight * RECOMMENDED_IE_BALANCE_GBP,
                 weight_change_1m=_weight_change_since(
                     point.cash_weight,
                     past_point=point_1m_ago,
