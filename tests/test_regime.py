@@ -22,9 +22,9 @@ class RegimeTests(unittest.TestCase):
         self.assertEqual(votes[1], "cash")
         self.assertTrue(in_regime_cash(votes, (1,)))
 
-    def test_apply_regime_cash_gate_uses_risk_free_when_unanimous(self) -> None:
+    def test_apply_regime_cash_gate_uses_prior_shadow_returns(self) -> None:
         shadow = []
-        for index in range(4):
+        for index in range(5):
             shadow.append(
                 WeekPoint(
                     iso_date=f"2024-0{index + 1}-01",
@@ -42,11 +42,14 @@ class RegimeTests(unittest.TestCase):
             )
         real_points = apply_regime_cash_gate(
             shadow,
-            rf_returns=[0.0, 0.0, 0.0, 0.01],
+            rf_returns=[0.0, 0.0, 0.0, 0.01, 0.02],
             regime_months=(1,),
         )
+        self.assertFalse(real_points[3].in_regime_cash)
+        self.assertAlmostEqual(real_points[3].equity, 0.9 * 0.9 * 0.9 * 0.9)
+        self.assertEqual(real_points[3].regime_votes, ())
         self.assertTrue(real_points[-1].in_regime_cash)
-        self.assertAlmostEqual(real_points[-1].equity, 0.9 * 0.9 * 0.9 * 1.01)
+        self.assertAlmostEqual(real_points[-1].equity, 0.9 * 0.9 * 0.9 * 0.9 * 1.02)
         self.assertEqual(real_points[-1].regime_votes, ((1, "cash"),))
 
     def test_default_regime_months(self) -> None:

@@ -1,8 +1,7 @@
 #!/bin/bash
-set -euo pipefail
 
 date=$(date +%Y%m%d)
-cd /home/jes/etfengine
+cd "$(dirname "$0")"
 
 mkdir -p "public/logs/$date/"
 mkdir -p "public/json/"

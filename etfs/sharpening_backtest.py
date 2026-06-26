@@ -512,7 +512,6 @@ def apply_regime_cash_gate(
     equity = 1.0
 
     for index, shadow in enumerate(shadow_points):
-        shadow_returns.append(shadow.weekly_return)
         votes: dict[int, str] = {}
         gated = False
         if len(shadow_returns) >= min_history:
@@ -558,6 +557,7 @@ def apply_regime_cash_gate(
                 in_regime_cash=gated,
             )
         )
+        shadow_returns.append(shadow.weekly_return)
     return real_points
 
 
