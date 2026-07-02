@@ -269,6 +269,16 @@ def build_snapshot(
     )
     ie_weights = ie_snapshot.etf_weights_by_market_id if ie_snapshot else None
     ie_icons = ie_icons_by_market_id(ie_snapshot) if ie_snapshot else None
+    ie_weights_ticker = (
+        {ticker: row.weight_pct for ticker, row in ie_snapshot.etf_weights_by_ticker.items()}
+        if ie_snapshot
+        else None
+    )
+    ie_icons_ticker = (
+        {ticker: row.icon_path for ticker, row in ie_snapshot.etf_weights_by_ticker.items()}
+        if ie_snapshot
+        else None
+    )
 
     point_1m_ago = point_at_or_before(
         result.points,
@@ -286,6 +296,8 @@ def build_snapshot(
         as_of=as_of,
         ie_weights_by_market_id=ie_weights,
         ie_icons_by_market_id=ie_icons,
+        ie_weights_by_ticker=ie_weights_ticker,
+        ie_icons_by_ticker=ie_icons_ticker,
         point_1m_ago=point_1m_ago,
         point_1y_ago=point_1y_ago,
     )

@@ -177,8 +177,6 @@ def _ie_weight_cell(
 def _recommended_ie_weight_cell(row: AllocationRow) -> str:
     if row.recommended_ie_weight_pct is not None:
         return f"{row.recommended_ie_weight_pct:d}%"
-    if row.recommended_ie_cash_amount is not None:
-        return f"£{row.recommended_ie_cash_amount:.0f} (on a £40k balance)"
     return "—"
 
 
@@ -310,7 +308,9 @@ def build_index_html(
         _summary_panel(
             "Invested weight",
             html.escape(_pct(invested_weight, signed=False)),
-            detail=html.escape(f"Cash {_pct(cash_weight, signed=False)}"),
+            detail=html.escape(
+                f"Defensive sleeve {_pct(cash_weight, signed=False)} allocated to XSTR"
+            ),
         ),
         ]
     )
@@ -442,7 +442,10 @@ def build_index_html(
             )
         lines.append("</table>")
 
-    cash_methodology = "Uninvested cash earns 0% (InvestEngine ISA cash balance)."
+    cash_methodology = (
+        "The defensive sleeve is implemented as XSTR in portfolio guidance. "
+        "Backtest accounting still models this sleeve using 0% cash return assumptions."
+    )
 
     lines.extend(
         [

@@ -200,14 +200,15 @@ class AllocationRow:
     spark_path: str
     return_1y: float | None
     recommended_ie_weight_pct: int | None = None
-    recommended_ie_cash_amount: float | None = None
     ie_weight_pct: float | None = None
     icon_path: str = ""
     weight_change_1m: float | None = None
     weight_change_1y: float | None = None
 
 
-RECOMMENDED_IE_BALANCE_GBP = 40_000.0
+CASH_PROXY_TICKER = "XSTR"
+CASH_PROXY_TITLE = "iShares EUR Cash UCITS ETF"
+CASH_PROXY_MARKET_ID = f"ie:{CASH_PROXY_TICKER}"
 
 
 def _recommended_ie_integer_weights(weights: list[float]) -> list[int]:
@@ -629,11 +630,10 @@ def _weight_change_since(
 ) -> float | None:
     if past_point is None:
         return None
-    past = (
-        past_point.cash_weight
-        if market_id == "__cash__"
-        else past_point.effective_weights.get(market_id, 0.0)
-    )
+    if market_id == CASH_PROXY_MARKET_ID:
+        past = past_point.effective_weights.get(market_id, 0.0) + past_point.cash_weight
+    else:
+        past = past_point.effective_weights.get(market_id, 0.0)
     if current <= 1e-6 and past <= 1e-6:
         return None
     return current - past
@@ -648,15 +648,24 @@ def allocation_rows(
     as_of: date,
     ie_weights_by_market_id: dict[str, float] | None = None,
     ie_icons_by_market_id: dict[str, str] | None = None,
+    ie_weights_by_ticker: dict[str, float] | None = None,
+    ie_icons_by_ticker: dict[str, str] | None = None,
     point_1m_ago: WeekPointLike | None = None,
     point_1y_ago: WeekPointLike | None = None,
 ) -> list[AllocationRow]:
     spark_dir.mkdir(parents=True, exist_ok=True)
     ie_weights = ie_weights_by_market_id or {}
     ie_icons = ie_icons_by_market_id or {}
+    ie_weights_ticker = ie_weights_by_ticker or {}
+    ie_icons_ticker = ie_icons_by_ticker or {}
     rows: list[AllocationRow] = []
+    merged_weights = dict(point.effective_weights)
+    if point.cash_weight > 1e-6:
+        merged_weights[CASH_PROXY_MARKET_ID] = (
+            merged_weights.get(CASH_PROXY_MARKET_ID, 0.0) + point.cash_weight
+        )
     weights = sorted(
-        point.effective_weights.items(),
+        merged_weights.items(),
         key=lambda item: item[1],
         reverse=True,
     )
@@ -669,18 +678,31 @@ def allocation_rows(
         )
     )
     for market_id, weight in visible_weights:
-        prices = yahoo_close_prices_last_year(market_id, yahoo_dir, as_of=as_of)
+        is_cash_proxy = market_id == CASH_PROXY_MARKET_ID
+        prices = [] if is_cash_proxy else yahoo_close_prices_last_year(market_id, yahoo_dir, as_of=as_of)
         spark_name = f"{market_id}.png"
         rows.append(
             AllocationRow(
                 market_id=market_id,
-                label=market_label(universe, market_id),
+                label=(
+                    f"{CASH_PROXY_TICKER} — {CASH_PROXY_TITLE} (defensive sleeve)"
+                    if is_cash_proxy
+                    else market_label(universe, market_id)
+                ),
                 weight_pct=weight,
-                spark_path=f"sparklines/{spark_name}",
-                return_1y=total_return_from_prices(prices),
+                spark_path="" if is_cash_proxy else f"sparklines/{spark_name}",
+                return_1y=None if is_cash_proxy else total_return_from_prices(prices),
                 recommended_ie_weight_pct=recommended_weights.get(market_id),
-                ie_weight_pct=ie_weights.get(market_id),
-                icon_path=ie_icons.get(market_id, ""),
+                ie_weight_pct=(
+                    ie_weights_ticker.get(CASH_PROXY_TICKER)
+                    if is_cash_proxy
+                    else ie_weights.get(market_id)
+                ),
+                icon_path=(
+                    ie_icons_ticker.get(CASH_PROXY_TICKER, "")
+                    if is_cash_proxy
+                    else ie_icons.get(market_id, "")
+                ),
                 weight_change_1m=_weight_change_since(
                     weight,
                     past_point=point_1m_ago,
@@ -690,27 +712,6 @@ def allocation_rows(
                     weight,
                     past_point=point_1y_ago,
                     market_id=market_id,
-                ),
-            )
-        )
-    if point.cash_weight > 1e-6:
-        rows.append(
-            AllocationRow(
-                market_id="__cash__",
-                label="Cash",
-                weight_pct=point.cash_weight,
-                spark_path="",
-                return_1y=None,
-                recommended_ie_cash_amount=point.cash_weight * RECOMMENDED_IE_BALANCE_GBP,
-                weight_change_1m=_weight_change_since(
-                    point.cash_weight,
-                    past_point=point_1m_ago,
-                    market_id="__cash__",
-                ),
-                weight_change_1y=_weight_change_since(
-                    point.cash_weight,
-                    past_point=point_1y_ago,
-                    market_id="__cash__",
                 ),
             )
         )
